@@ -3,6 +3,8 @@ import { createReadStream, existsSync, readFileSync, readdirSync, statSync, writ
 import { basename, dirname, isAbsolute, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { cwd, exit } from 'node:process';
+import { platform } from 'node:os';
+import { spawn } from 'node:child_process';
 import { Command, InvalidArgumentError } from 'commander';
 import { appendFileSync } from 'node:fs';
 import { githubMarkdown } from './report.js';
@@ -86,8 +88,30 @@ function outputTable(items: Flake[]) {
 function asCsv(items: Flake[]) { return ['test_id,run_id,category,confidence,file_path,test_name', ...items.map((item) => [item.testId, item.runId, item.category, item.confidence, item.filePath, item.testName].map((value) => `"${String(value ?? '').replaceAll('"', '""')}"`).join(','))].join('\n'); }
 function asMarkdown(items: Flake[]) { return ['| Test | Category | Confidence | File |', '|---|---|---:|---|', ...items.map((item) => `| ${item.testName ?? item.testId ?? '-'} | ${item.category ?? '-'} | ${item.confidence ?? 0}% | ${item.filePath ?? '-'} |`)].join('\n'); }
 function addCommonOptions(command: Command) { return command.option('-c, --config <path>', 'configuration path', configPath); }
+function openDashboard(url: string) {
+  const command = platform() === 'darwin' ? 'open' : platform() === 'win32' ? 'cmd' : 'xdg-open';
+  const args = platform() === 'win32' ? ['/c', 'start', '', url] : [url];
+  const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+  child.unref();
+}
 
 const program = new Command().name('flakecheck').description('HTTP-only FlakeCheck Gateway client').version('0.1.0');
+program.command('server').description('open the hosted FlakeCheck web dashboard')
+  .option('--url <url>', 'dashboard URL', process.env.FLAKECHECK_DASHBOARD_URL)
+  .option('--no-open', 'print the URL without opening a browser')
+  .action((options: { url?: string; open: boolean }) => {
+    const url = options.url?.trim();
+    if (!url) throw new CliError(1, 'Set FLAKECHECK_DASHBOARD_URL or pass --url <dashboard-url>');
+    let dashboardUrl: URL;
+    try {
+      dashboardUrl = new URL(url);
+      if (!['http:', 'https:'].includes(dashboardUrl.protocol)) throw new Error('URL must use http or https');
+    } catch (error) {
+      throw new CliError(1, `Invalid dashboard URL: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    console.log(`FlakeCheck dashboard: ${dashboardUrl.toString()}`);
+    if (options.open) openDashboard(dashboardUrl.toString());
+  });
 program.command('init').description('create a repository-scoped CLI configuration')
   .requiredOption('--gateway <url>', 'Gateway URL')
   .requiredOption('--repo <owner/name>', 'canonical repository', validRepo)

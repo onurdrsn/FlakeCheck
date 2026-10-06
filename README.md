@@ -121,6 +121,30 @@ Copy `.env.example` for local tooling. Do not commit a populated `.env`; product
 
 ## CLI
 
+The CLI is published as `@flakecheck/cli`; users do not need to clone this repository:
+
+```sh
+npm install --global @flakecheck/cli
+# or use it without a global install:
+npx @flakecheck/cli server --url https://flakecheck.example.com
+```
+
+The scoped package is configured for public npm publishing. From the repository root, publish it with:
+
+```sh
+pnpm --filter @flakecheck/cli run build
+pnpm --filter @flakecheck/cli publish --access public
+```
+
+Open the hosted web dashboard from any project directory:
+
+```sh
+export FLAKECHECK_DASHBOARD_URL=https://flakecheck.example.com
+flakecheck server
+```
+
+Use `--no-open` in CI or headless environments. `server` opens the FlakeCheck web application; it does not start a local database or Cloudflare Workers. The hosted Gateway/Workers remain the production runtime, while the CLI uploads reports over HTTPS.
+
 Build and invoke the local binary:
 
 ```sh

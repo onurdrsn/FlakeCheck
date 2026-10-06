@@ -1,16 +1,29 @@
 {
   "name": "@flakecheck/cli",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
+  "description": "CLI for ingesting test reports and reviewing FlakeCheck results",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onurdrsn/FlakeCheck.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/onurdrsn/FlakeCheck",
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "flakecheck": "./dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "commander": "^14.0.0"
