@@ -72,7 +72,8 @@ export async function verifyJwt(token: string, secret: string, now = Math.floor(
   return typeof payload.exp === 'number' && payload.exp > now ? payload : null;
 }
 
-export function sessionCookie(token: string, maxAge = SESSION_TTL_SECONDS): string {
-  return `flakecheck_session=${encodeURIComponent(token)}; Max-Age=${maxAge}; Path=/; HttpOnly; Secure; SameSite=Lax`;
+export function sessionCookie(token: string, maxAge = SESSION_TTL_SECONDS, domain?: string): string {
+  const domainAttribute = domain?.trim() ? `; Domain=${domain.trim()}` : '';
+  return `flakecheck_session=${encodeURIComponent(token)}; Max-Age=${maxAge}; Path=/; HttpOnly; Secure; SameSite=Lax${domainAttribute}`;
 }
-export const expiredSessionCookie = () => sessionCookie('', 0);
+export const expiredSessionCookie = (domain?: string) => sessionCookie('', 0, domain);

@@ -25,6 +25,7 @@ export interface Env {
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   PUBLIC_APP_URL?: string;
+  SESSION_COOKIE_DOMAIN?: string;
   CORS_ORIGINS?: string;
   SLACK_WEBHOOK_URL?: string;
   DISCORD_WEBHOOK_URL?: string;
@@ -38,6 +39,12 @@ export interface Env {
 export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
   async fetch(request: Request): Promise<Response> {
     const app = new Hono<{ Bindings: Env; Variables: { repo: string } }>();
+    const sessionCookieFor = (token: string) => sessionCookie(token, undefined, this.env.SESSION_COOKIE_DOMAIN);
+    const expiredSessionCookieFor = () => expiredSessionCookie(this.env.SESSION_COOKIE_DOMAIN);
+    const dashboardUrl = (path: string) => {
+      const base = this.env.PUBLIC_APP_URL?.replace(/\/+$/, '');
+      return base ? `${base}${path.startsWith('/') ? path : `/${path}`}` : path;
+    };
     app.use('/api/*', cors({
       origin: (origin, context) => {
         const allowed = (context.env.CORS_ORIGINS ?? context.env.PUBLIC_APP_URL ?? '')
@@ -75,7 +82,7 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
         const body = await context.req.json<{ email: string; code: string; termsAccepted?: boolean; privacyAccepted?: boolean }>();
         if (!body.termsAccepted || !body.privacyAccepted) return context.json({ error: 'Terms and Privacy Policy acceptance is required' }, 400);
         const token = await consumeOtp(context.env, body.email, body.code);
-        return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookie(token) } });
+        return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookieFor(token) } });
       } catch (error) {
         console.error('OTP verification failed', error);
         if (error instanceof AuthRateLimitError) {
@@ -97,13 +104,14 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
         db.select({ id: oauthAccounts.id }).from(oauthAccounts).where(and(eq(oauthAccounts.userId, auth.userId), eq(oauthAccounts.provider, 'github'))).limit(1),
       ]);
       const user = userRows[0];
-      return new Response(JSON.stringify({ userId: auth.userId, email: user?.email ?? null, displayName: user?.displayName ?? null, githubConnected: Boolean(githubRows[0]) }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookie(auth.token) } });
+      return new Response(JSON.stringify({ userId: auth.userId, email: user?.email ?? null, displayName: user?.displayName ?? null, githubConnected: Boolean(githubRows[0]) }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookieFor(auth.token) } });
     });
     app.get('/api/auth/:provider', (context) => {
       const provider = context.req.param('provider');
       if (provider !== 'google' && provider !== 'github') return context.json({ error: 'Unsupported OAuth provider' }, 400);
       const state = crypto.randomUUID();
-      return new Response(null, { status: 302, headers: { Location: oauthUrl(provider, context.env, state), 'Set-Cookie': `flakecheck_oauth_state=${state}; Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax` } });
+      const cookieDomain = this.env.SESSION_COOKIE_DOMAIN?.trim() ? `; Domain=${this.env.SESSION_COOKIE_DOMAIN.trim()}` : '';
+      return new Response(null, { status: 302, headers: { Location: oauthUrl(provider, context.env, state), 'Set-Cookie': `flakecheck_oauth_state=${state}; Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax${cookieDomain}` } });
     });
     app.get('/api/github/repos', async (context) => {
       const token = context.req.header('cookie')?.match(/(?:^|;\s*)flakecheck_session=([^;]+)/)?.[1];
@@ -175,13 +183,13 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       if (!code || !state || !storedState || state !== decodeURIComponent(storedState)) return context.json({ error: 'Invalid OAuth state' }, 400);
       try {
         const token = await completeOAuth(context.env, provider, code);
-        return new Response(null, { status: 302, headers: { Location: '/dashboard', 'Set-Cookie': sessionCookie(token) } });
+        return new Response(null, { status: 302, headers: { Location: dashboardUrl('/dashboard'), 'Set-Cookie': sessionCookieFor(token) } });
       } catch (error) {
         console.error('OAuth callback failed', error);
         return context.json({ error: 'We could not complete sign-in with that provider.' }, 401);
       }
     });
-    app.post('/api/auth/logout', (context) => new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': expiredSessionCookie() } }));
+    app.post('/api/auth/logout', (context) => new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': expiredSessionCookieFor() } }));
     app.patch('/api/account/profile', async (context) => {
       const token = context.req.header('cookie')?.match(/(?:^|;\s*)flakecheck_session=([^;]+)/)?.[1];
       const auth = await authenticateSession(context.env, token ? decodeURIComponent(token) : undefined);
@@ -331,7 +339,7 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       const auth = await authenticateSession(context.env, token ? decodeURIComponent(token) : undefined);
       if (!auth) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
       await deleteAccount(context.env, auth.userId);
-      return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': expiredSessionCookie() } });
+      return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': expiredSessionCookieFor() } });
     });
     const response = await app.fetch(request, this.env);
     if (response.status !== 404 || !this.env.ASSETS) return response;

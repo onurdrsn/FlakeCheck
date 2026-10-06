@@ -4,7 +4,7 @@ FlakeCheck connects to a GitHub repository, reads CI test results, and turns rep
 
 ## 1. First login
 
-When the dashboard is hosted on a different domain than the API, configure the dashboard build variable `VITE_GATEWAY_URL` with the API origin, such as `https://api.example.com`. Configure the Gateway variable `CORS_ORIGINS` with the dashboard origin, such as `https://app.example.com`, then redeploy both sides. A redirect does not replace this configuration: browser API calls still need the correct origin and CORS preflight support.
+When the dashboard is hosted on a different domain than the API, configure the dashboard build variable `VITE_GATEWAY_URL` with the API origin, such as `https://api.example.com`. Configure the Gateway variables `CORS_ORIGINS` with the dashboard origin and `SESSION_COOKIE_DOMAIN` with their shared parent domain, then redeploy both sides. Keep `PUBLIC_APP_URL` set to the dashboard origin so OAuth callbacks do not land on the API host. A redirect does not replace this configuration: browser API calls still need the correct origin, CORS preflight support, and a cookie scope shared by the subdomains.
 
 1. Open FlakeCheck and sign in with your work email or GitHub.
 2. After authentication, open **Connect workspace**.
