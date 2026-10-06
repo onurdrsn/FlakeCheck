@@ -29,16 +29,16 @@ install:
 build:
 	$(PNPM) run build
 
-build-ingestion:
+build-ingestion: build-shared
 	$(PNPM) --filter @flakecheck/ingestion-service run build
 
-build-analysis:
+build-analysis: build-shared
 	$(PNPM) --filter @flakecheck/analysis-service run build
 
-build-quarantine:
+build-quarantine: build-shared
 	$(PNPM) --filter @flakecheck/quarantine-service run build
 
-build-gateway:
+build-gateway: build-shared
 	$(PNPM) --filter @flakecheck/gateway-service run build
 
 build-shared:
