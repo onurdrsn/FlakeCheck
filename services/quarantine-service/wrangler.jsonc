@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "flakecheck-quarantine-service",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "alias": {
+    "@flakecheck/shared-kernel": "../../packages/shared-kernel/src/index.ts"
+  },
+  "vars": {
+    "SERVICE_NAME": "quarantine-service"
+  },
+  "triggers": {
+    "crons": ["0 * * * *"]
+  }
+}

@@ -1,0 +1,1 @@
+ALTER TABLE "oauth_accounts" ADD COLUMN "access_token" text;

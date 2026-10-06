@@ -1,0 +1,21 @@
+{
+  "name": "@flakecheck/analysis-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cloudflare/workers-types": "^4.20250913.0",
+    "@neondatabase/serverless": "^0.10.4",
+    "@flakecheck/shared-kernel": "workspace:*",
+    "drizzle-orm": "^0.38.3",
+    "hono": "^4.7.2"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.5"
+  }
+}

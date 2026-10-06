@@ -1,0 +1,1 @@
+{"tests":[{"nodeid":"tests/test_math.py::test_adds","name":"test_adds","file":"tests/test_math.py","outcome":"passed","call":{"duration":0.02}},{"nodeid":"tests/test_math.py::test_rejects","name":"test_rejects","file":"tests/test_math.py","outcome":"failed","call":{"duration":0.01,"longrepr":"secret=hidden"}}]}

@@ -1,0 +1,23 @@
+{
+  "name": "@flakecheck/ingestion-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@cloudflare/workers-types": "^4.20250913.0",
+    "@neondatabase/serverless": "^0.10.4",
+    "@streamparser/json": "^0.0.22",
+    "drizzle-orm": "^0.38.3",
+    "hono": "^4.7.2",
+    "sax-ts": "^1.2.2",
+    "@flakecheck/shared-kernel": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.5"
+  }
+}

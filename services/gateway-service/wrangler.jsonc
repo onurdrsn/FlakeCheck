@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "flakecheck-gateway-service",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "alias": {
+    "@flakecheck/shared-kernel": "../../packages/shared-kernel/src/index.ts"
+  },
+  "vars": { "SERVICE_NAME": "gateway-service" },
+  "services": [
+    { "binding": "INGESTION_SERVICE", "service": "flakecheck-ingestion-service" },
+    { "binding": "ANALYSIS_SERVICE", "service": "flakecheck-analysis-service" },
+    { "binding": "QUARANTINE_SERVICE", "service": "flakecheck-quarantine-service" }
+  ],
+  "assets": { "directory": "./public", "binding": "ASSETS", "not_found_handling": "single-page-application" }
+}

@@ -1,0 +1,1 @@
+{"suites":[{"title":"chromium","specs":[{"title":"homepage","file":"tests/home.spec.ts","tests":[{"title":"loads","results":[{"status":"passed","duration":20}]}]}]}]}

@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<testsuite name="unit">
+  <testcase classname="math" name="adds" file="tests/math.test.ts" time="0.012"/>
+  <testcase classname="math" name="rejects" file="tests/math.test.ts" time="0.004">
+    <failure message="Bearer abcdefghijklmnopqrstuvwxyz">password=secret-value</failure>
+  </testcase>
+</testsuite>

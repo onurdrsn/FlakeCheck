@@ -1,0 +1,168 @@
+# ==========================================
+# 1. Environment & Sensitive Data (Critical)
+# ==========================================
+.env
+.env.*
+!.env.example
+!.env.template
+*.pem
+*.key
+*.cert
+*.crt
+*.pfx
+*.p12
+id_rsa
+id_ecdsa
+id_ed25519
+*.token
+secrets/
+
+.dev.vars
+.dev.vars.*
+**/.dev.vars
+**/.dev.vars.*
+.wrangler
+.wrangler/
+**/.wrangler
+**/.wrangler/
+
+# ==========================================
+# 2. Node.js & Package Managers
+# ==========================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-store/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# ==========================================
+# 3. Build & Compilation Outputs
+# ==========================================
+dist/
+build/
+out/
+.next/
+.nuxt/
+.output/
+.turbo/
+.cache/
+.parcel-cache/
+*.tsbuildinfo
+.eslintcache
+.stylelintcache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# ==========================================
+# 4. Testing & Code Coverage
+# ==========================================
+coverage/
+.nyc_output/
+*.lcov
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+cypress/videos/
+cypress/screenshots/
+.vitest/
+
+# ==========================================
+# 5. Python & Virtual Environments
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+
+# ==========================================
+# 6. Docker & Local Containers
+# ==========================================
+*.tar
+*.docker.log
+docker-compose.override.yml
+
+# ==========================================
+# 7. AI, Local Models & Agent Caches
+# ==========================================
+# Büyük model ağırlıkları ve yerel LLM dosyaları
+*.gguf
+*.bin
+*.safetensors
+*.onnx
+models/
+weights/
+
+# Agent runtime ve yerel log kalıntıları
+.claude
+agent/
+agents/
+.agent-memory/
+agent_skills_archive/
+*.agent.log
+*.prompt.log
+skills_scan_report.md
+.agent
+.agents
+
+
+# ==========================================
+# 8. Operating System & Local Artifacts
+# ==========================================
+# Linux (Wayland, GNOME, Core Dumps)
+*~
+.directory
+core
+core.*
+vgcore.*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+
+# ==========================================
+# 9. IDEs & Editors
+# ==========================================
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+.fleet/
+
+.flakecheckrc.json

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">FlakeCheck</title>
+  <desc id="desc">Mint reliability signal on a graphite field</desc>
+  <defs>
+    <linearGradient id="field" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1b2b2b"/>
+      <stop offset="1" stop-color="#08100f"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="15" y1="47" x2="51" y2="17" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#68d9aa"/>
+      <stop offset="1" stop-color="#b8ffe0"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="18" fill="#060908"/>
+  <path d="M16 7h24c9.389 0 17 7.611 17 17v16c0 9.389-7.611 17-17 17H16c-3.866 0-7-3.134-7-7V14c0-3.866 3.134-7 7-7Z" fill="url(#field)" stroke="#35544a" stroke-width="2"/>
+  <path d="M18 42.5h8.5l4.2-16 5.7 22 4.1-13H48" fill="none" stroke="url(#signal)" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"/>
+  <circle cx="48" cy="35.5" r="3" fill="#b8ffe0"/>
+</svg>

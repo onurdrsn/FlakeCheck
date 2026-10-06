@@ -1,0 +1,1 @@
+{"testResults":[{"testFilePath":"tests/math.test.ts","ancestorTitles":["math"],"title":"adds","status":"passed","duration":12},{"testFilePath":"tests/math.test.ts","ancestorTitles":["math"],"title":"rejects","status":"failed","duration":4,"failureMessages":["token=secret-value"]}]}
