@@ -1,3 +1,9 @@
+export function apiUrl(path: string): string {
+  const baseUrl = (import.meta.env.VITE_GATEWAY_URL as string | undefined)?.replace(/\/+$/, '');
+  if (!baseUrl) return path;
+  return `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 export async function readJson<T>(response: Response): Promise<T | null> {
   const text = await response.text();
   if (!text.trim()) return null;

@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { AnalysisRPC, IngestionRPC, QuarantineRPC } from '@flakecheck/shared-kernel';
@@ -24,6 +25,7 @@ export interface Env {
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   PUBLIC_APP_URL?: string;
+  CORS_ORIGINS?: string;
   SLACK_WEBHOOK_URL?: string;
   DISCORD_WEBHOOK_URL?: string;
   SERVICE_NAME?: string;
@@ -36,6 +38,18 @@ export interface Env {
 export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
   async fetch(request: Request): Promise<Response> {
     const app = new Hono<{ Bindings: Env; Variables: { repo: string } }>();
+    app.use('/api/*', cors({
+      origin: (origin, context) => {
+        const allowed = (context.env.CORS_ORIGINS ?? context.env.PUBLIC_APP_URL ?? '')
+          .split(',')
+          .map((value: string) => value.trim())
+          .filter(Boolean);
+        return origin && allowed.includes(origin) ? origin : '';
+      },
+      credentials: true,
+      allowHeaders: ['Content-Type', 'X-FlakeCheck-Token', 'X-FlakeCheck-Repo', 'X-FlakeCheck-Format'],
+      allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    }));
     app.onError((error, context) => {
       console.error('Gateway request failed', error);
       return context.json({ error: 'Something went wrong while processing your request. Please try again.' }, 500);

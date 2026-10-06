@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { apiUrl } from '../http';
 import { LegalModal } from '../components/LegalModal';
 import { friendlyResponseError, readJson, userFacingMessage } from '../http';
 
@@ -16,13 +17,13 @@ export function LoginPage() {
       return;
     }
     setEmail(normalizedEmail);
-    const response = await fetch('/api/auth/otp/request', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: normalizedEmail }) });
+    const response = await fetch(apiUrl('/api/auth/otp/request'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: normalizedEmail }) });
     if (!response.ok) throw friendlyResponseError(response, 'Unable to send a sign-in code right now.');
     await readJson(response);
     setRequested(true); setStatus('Check your inbox for the one-time sign-in code.');
   }
   async function verifyCode() {
-    const response = await fetch('/api/auth/otp/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code, termsAccepted: accepted, privacyAccepted: accepted }) });
+    const response = await fetch(apiUrl('/api/auth/otp/verify'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code, termsAccepted: accepted, privacyAccepted: accepted }) });
     if (!response.ok) throw friendlyResponseError(response, 'That sign-in code is invalid or expired.');
     await readJson(response);
     window.location.replace('/dashboard');

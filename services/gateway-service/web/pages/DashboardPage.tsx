@@ -9,7 +9,7 @@ import { QuarantineModal } from '../components/QuarantineModal';
 import { StatsCard } from '../components/StatsCard';
 import { WorkspaceConnector } from '../components/WorkspaceConnector';
 import type { Flake } from '../types';
-import { friendlyResponseError, userFacingMessage } from '../http';
+import { apiUrl, friendlyResponseError, userFacingMessage } from '../http';
 
 const WORKSPACE_REPOSITORY_KEY = 'flakecheck.workspace.repository';
 
@@ -36,8 +36,8 @@ export function DashboardPage() {
   const copy = translations[locale];
   useEffect(() => {
     Promise.all([
-      fetch('/api/auth/me', { credentials: 'include' }),
-      fetch('/api/account/repositories', { credentials: 'include' }),
+      fetch(apiUrl('/api/auth/me'), { credentials: 'include' }),
+      fetch(apiUrl('/api/account/repositories'), { credentials: 'include' }),
     ]).then(async ([accountResponse, repositoriesResponse]) => {
       if (accountResponse.ok) setAccount(await accountResponse.json() as { email: string | null; displayName: string | null; githubConnected?: boolean });
       if (repositoriesResponse.ok) {
@@ -74,7 +74,7 @@ export function DashboardPage() {
   }
   async function createRepositoryToken() {
     try {
-      const response = await fetch('/api/account/repository-token', {
+      const response = await fetch(apiUrl('/api/account/repository-token'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -92,7 +92,7 @@ export function DashboardPage() {
   }
   async function loadRepositoryTokenStatus() {
     if (!repo) return;
-    const response = await fetch(`/api/account/repository-token?repo=${encodeURIComponent(repo)}`, { credentials: 'include' });
+    const response = await fetch(apiUrl(`/api/account/repository-token?repo=${encodeURIComponent(repo)}`), { credentials: 'include' });
     if (response.ok) setRepositoryTokenConfigured((await response.json() as { configured: boolean }).configured);
   }
   async function copyRepositoryToken() {
