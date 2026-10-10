@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { cwd, exit } from 'node:process';
 import { platform } from 'node:os';
-import { spawn } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import { Command, InvalidArgumentError } from 'commander';
 import { appendFileSync } from 'node:fs';
 import { githubMarkdown } from './report.js';
@@ -165,18 +165,56 @@ class Spinner {
   }
 }
 
+function detectGitContext(): { commitSha?: string; branch?: string } {
+  try {
+    const commitSha = (process.env.GITHUB_SHA
+      || process.env.CI_COMMIT_SHA
+      || process.env.GIT_COMMIT
+      || execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim()) || undefined;
+    const branch = (process.env.GITHUB_REF_NAME
+      || process.env.CI_COMMIT_REF_NAME
+      || process.env.GIT_BRANCH
+      || execSync('git branch --show-current', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim()) || undefined;
+    const result: { commitSha?: string; branch?: string } = {};
+    if (commitSha) result.commitSha = commitSha;
+    if (branch) result.branch = branch;
+    return result;
+  } catch {
+    return {};
+  }
+}
+
 program.command('ingest <fileOrGlob>').description('stream a test report to the Gateway')
   .requiredOption('--format <type>', 'report format', validFormat)
-  .action(async (input: string, options: { format: Format }) => {
+  .option('--commit <sha>', 'Git commit SHA')
+  .option('--branch <name>', 'Git branch name')
+  .action(async (input: string, options: { format: Format; commit?: string; branch?: string }) => {
     const api = client();
     const files = filesFor(input);
     if (!files.length) throw new CliError(1, `No files matched ${input}`);
+
+    const git = detectGitContext();
+    const commitSha = options.commit || git.commitSha;
+    const branch = options.branch || git.branch;
+
     for (const file of files) {
       if (!existsSync(file)) throw new CliError(1, `Report does not exist: ${posixPath(file)}`);
       const spinner = new Spinner(`Streaming ${basename(file)} to FlakeCheck Gateway...`).start();
       try {
-        const response = await api.request<{ runId: string; ingestedAttempts: number }>('/api/ingest', { method: 'POST', headers: { 'X-FlakeCheck-Format': options.format, 'Content-Type': 'application/octet-stream' }, body: Readable.toWeb(createReadStream(file)) as ReadableStream<Uint8Array> });
-        spinner.stop('ok', `${posixPath(file)}: ${response.runId} (${response.ingestedAttempts} attempts ingested)`);
+        const headers: Record<string, string> = {
+          'X-FlakeCheck-Format': options.format,
+          'Content-Type': 'application/octet-stream',
+          'X-FlakeCheck-Source-File-Path': posixPath(file),
+        };
+        if (commitSha) headers['X-FlakeCheck-Commit-Sha'] = commitSha;
+        if (branch) headers['X-FlakeCheck-Branch'] = branch;
+
+        const response = await api.request<{ runId: string; ingestedAttempts: number }>('/api/ingest', {
+          method: 'POST',
+          headers,
+          body: Readable.toWeb(createReadStream(file)) as ReadableStream<Uint8Array>,
+        });
+        spinner.stop('ok', `${posixPath(file)}: ${response.runId} (${response.ingestedAttempts} attempts ingested) [commit: ${commitSha ? commitSha.slice(0, 7) : 'n/a'}]`);
       } catch (err) {
         spinner.stop('error', `Failed to ingest ${posixPath(file)}`);
         throw err;
