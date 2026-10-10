@@ -5,7 +5,13 @@ import { LoginPage } from './pages/LoginPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { ProtectedDashboard } from './pages/ProtectedDashboard';
 import { TermsPage } from './pages/TermsPage';
+import { apiUrl } from './http';
 
-const page = window.location.pathname;
-const app = page === '/login' ? <LoginPage /> : page === '/dashboard' ? <ProtectedDashboard /> : page === '/terms' ? <TermsPage /> : page === '/privacy' ? <PrivacyPage /> : <LandingPage />;
-createRoot(document.getElementById('root')!).render(app);
+const path = window.location.pathname.replace(/\/+$/, '') || '/';
+
+if (path.startsWith('/api/auth/') && path.endsWith('/callback')) {
+  window.location.replace(apiUrl(window.location.pathname + window.location.search));
+} else {
+  const app = path === '/login' ? <LoginPage /> : path === '/dashboard' ? <ProtectedDashboard /> : path === '/terms' ? <TermsPage /> : path === '/privacy' ? <PrivacyPage /> : <LandingPage />;
+  createRoot(document.getElementById('root')!).render(app);
+}

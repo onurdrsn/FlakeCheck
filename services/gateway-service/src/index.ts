@@ -36,6 +36,14 @@ export interface Env {
   QUARANTINE_SERVICE: QuarantineRPC & { fetch(request: Request): Promise<Response> };
 }
 
+function extractSessionToken(context: { req: { header(name: string): string | undefined } }): string | undefined {
+  const cookieMatch = context.req.header('cookie')?.match(/(?:^|;\s*)flakecheck_session=([^;]+)/)?.[1];
+  if (cookieMatch) return decodeURIComponent(cookieMatch);
+  const authHeader = context.req.header('Authorization') ?? context.req.header('authorization');
+  if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7).trim();
+  return undefined;
+}
+
 export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
   async fetch(request: Request): Promise<Response> {
     const app = new Hono<{ Bindings: Env; Variables: { repo: string } }>();
@@ -54,7 +62,7 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
         return origin && allowed.includes(origin) ? origin : '';
       },
       credentials: true,
-      allowHeaders: ['Content-Type', 'X-FlakeCheck-Token', 'X-FlakeCheck-Repo', 'X-FlakeCheck-Format'],
+      allowHeaders: ['Content-Type', 'Authorization', 'X-FlakeCheck-Token', 'X-FlakeCheck-Repo', 'X-FlakeCheck-Format'],
       allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     }));
     app.onError((error, context) => {
@@ -82,7 +90,7 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
         const body = await context.req.json<{ email: string; code: string; termsAccepted?: boolean; privacyAccepted?: boolean }>();
         if (!body.termsAccepted || !body.privacyAccepted) return context.json({ error: 'Terms and Privacy Policy acceptance is required' }, 400);
         const token = await consumeOtp(context.env, body.email, body.code);
-        return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookieFor(token) } });
+        return new Response(JSON.stringify({ ok: true, token }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookieFor(token) } });
       } catch (error) {
         console.error('OTP verification failed', error);
         if (error instanceof AuthRateLimitError) {
@@ -95,8 +103,8 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       }
     });
     app.get('/api/auth/me', async (context) => {
-      const token = context.req.header('cookie')?.match(/(?:^|;\s*)flakecheck_session=([^;]+)/)?.[1];
-      const auth = await authenticateSession(context.env, token ? decodeURIComponent(token) : undefined);
+      const token = extractSessionToken(context);
+      const auth = await authenticateSession(context.env, token);
       if (!auth) return context.json({ error: 'Authentication required' }, 401);
       const db = createDatabase(context.env.DATABASE_URL);
       const [userRows, githubRows] = await Promise.all([
@@ -114,8 +122,8 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       return new Response(null, { status: 302, headers: { Location: oauthUrl(provider, context.env, state), 'Set-Cookie': `flakecheck_oauth_state=${state}; Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax${cookieDomain}` } });
     });
     app.get('/api/github/repos', async (context) => {
-      const token = context.req.header('cookie')?.match(/(?:^|;\s*)flakecheck_session=([^;]+)/)?.[1];
-      const auth = await authenticateSession(context.env, token ? decodeURIComponent(token) : undefined);
+      const token = extractSessionToken(context);
+      const auth = await authenticateSession(context.env, token);
       if (!auth) return context.json({ error: 'Authentication required' }, 401);
       const account = await createDatabase(context.env.DATABASE_URL).select({ accessToken: oauthAccounts.accessToken }).from(oauthAccounts).where(and(eq(oauthAccounts.userId, auth.userId), eq(oauthAccounts.provider, 'github'))).limit(1);
       if (!account[0]?.accessToken) return context.json({ error: 'Connect GitHub to choose a repository.' }, 400);
@@ -145,8 +153,8 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       return context.json({ repos: validRepos.map((repo) => ({ fullName: repo.full_name, visibility: repo.private ? 'private' : 'public', defaultBranch: repo.default_branch })) });
     });
     app.get('/api/github/repos/:owner/:name/branches', async (context) => {
-      const token = context.req.header('cookie')?.match(/(?:^|;\s*)flakecheck_session=([^;]+)/)?.[1];
-      const auth = await authenticateSession(context.env, token ? decodeURIComponent(token) : undefined);
+      const token = extractSessionToken(context);
+      const auth = await authenticateSession(context.env, token);
       if (!auth) return context.json({ error: 'Authentication required' }, 401);
       const account = await createDatabase(context.env.DATABASE_URL).select({ accessToken: oauthAccounts.accessToken }).from(oauthAccounts).where(and(eq(oauthAccounts.userId, auth.userId), eq(oauthAccounts.provider, 'github'))).limit(1);
       if (!account[0]?.accessToken) return context.json({ error: 'Connect GitHub to choose a repository.' }, 400);
@@ -183,7 +191,7 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       if (!code || !state || !storedState || state !== decodeURIComponent(storedState)) return context.json({ error: 'Invalid OAuth state' }, 400);
       try {
         const token = await completeOAuth(context.env, provider, code);
-        return new Response(null, { status: 302, headers: { Location: dashboardUrl('/dashboard'), 'Set-Cookie': sessionCookieFor(token) } });
+        return new Response(null, { status: 302, headers: { Location: dashboardUrl(`/dashboard?session=${encodeURIComponent(token)}`), 'Set-Cookie': sessionCookieFor(token) } });
       } catch (error) {
         console.error('OAuth callback failed', error);
         return context.json({ error: 'We could not complete sign-in with that provider.' }, 401);
@@ -191,8 +199,8 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
     });
     app.post('/api/auth/logout', (context) => new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': expiredSessionCookieFor() } }));
     app.patch('/api/account/profile', async (context) => {
-      const token = context.req.header('cookie')?.match(/(?:^|;\s*)flakecheck_session=([^;]+)/)?.[1];
-      const auth = await authenticateSession(context.env, token ? decodeURIComponent(token) : undefined);
+      const token = extractSessionToken(context);
+      const auth = await authenticateSession(context.env, token);
       if (!auth) return context.json({ error: 'Authentication required' }, 401);
       const body = await context.req.json<{ displayName?: string; locale?: string }>();
       const displayName = body.displayName?.trim().slice(0, 120) || null;
@@ -201,8 +209,8 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       return context.json({ ok: true, displayName, locale });
     });
     app.get('/api/account/repositories', async (context) => {
-      const token = context.req.header('cookie')?.match(/(?:^|;\s*)flakecheck_session=([^;]+)/)?.[1];
-      const auth = await authenticateSession(context.env, token ? decodeURIComponent(token) : undefined);
+      const token = extractSessionToken(context);
+      const auth = await authenticateSession(context.env, token);
       if (!auth) return context.json({ error: 'Authentication required' }, 401);
       const rows = await createDatabase(context.env.DATABASE_URL)
         .select({ repo: repositoryAccess.repo })
@@ -212,8 +220,8 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       return context.json({ repositories: rows.map((row) => row.repo) });
     });
     app.get('/api/account/repository-token', async (context) => {
-      const token = context.req.header('cookie')?.match(/(?:^|;\s*)flakecheck_session=([^;]+)/)?.[1];
-      const auth = await authenticateSession(context.env, token ? decodeURIComponent(token) : undefined);
+      const token = extractSessionToken(context);
+      const auth = await authenticateSession(context.env, token);
       if (!auth) return context.json({ error: 'Authentication required' }, 401);
       const repo = canonicalRepo(context.req.query('repo'));
       if (!repo) return context.json({ error: 'A repository in owner/name format is required.' }, 400);
@@ -225,8 +233,8 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       return context.json({ configured: Boolean(rows[0]) });
     });
     app.post('/api/account/repository-token', async (context) => {
-      const token = context.req.header('cookie')?.match(/(?:^|;\s*)flakecheck_session=([^;]+)/)?.[1];
-      const auth = await authenticateSession(context.env, token ? decodeURIComponent(token) : undefined);
+      const token = extractSessionToken(context);
+      const auth = await authenticateSession(context.env, token);
       if (!auth) return context.json({ error: 'Authentication required' }, 401);
       const body = await context.req.json<{ repo?: string }>();
       const repo = canonicalRepo(body.repo);
@@ -243,14 +251,14 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       return context.json({ document, version: '1.0', language: context.req.header('accept-language')?.startsWith('tr') ? 'tr' : 'en' });
     });
     app.use('/api/*', async (context, next) => {
-      if (context.req.path.startsWith('/api/auth/') || context.req.path.startsWith('/api/legal/') || context.req.path.startsWith('/api/account/') || context.req.path.startsWith('/api/github/')) return next();
+      if (context.req.path.startsWith('/api/auth/') || context.req.path.startsWith('/api/legal/') || context.req.path.startsWith('/api/account/') || context.req.path.startsWith('/api/github/') || context.req.path === '/api/health') return next();
       try {
         const url = new URL(context.req.url);
         const body = context.req.method === 'GET' ? undefined : await context.req.raw.clone().json().catch(() => undefined) as Record<string, unknown> | undefined;
         const repo = String(body?.repo ?? url.searchParams.get('repo') ?? context.req.header('x-flakecheck-repo') ?? '');
         let auth;
-        const sessionCookieValue = context.req.header('cookie')?.match(/(?:^|;\s*)flakecheck_session=([^;]+)/)?.[1];
-        const session = await authenticateSession(context.env, sessionCookieValue ? decodeURIComponent(sessionCookieValue) : undefined);
+        const sessionToken = extractSessionToken(context);
+        const session = await authenticateSession(context.env, sessionToken);
         let githubAccessToken: string | undefined;
         if (session) {
           const githubAccount = await createDatabase(context.env.DATABASE_URL).select({ accessToken: oauthAccounts.accessToken }).from(oauthAccounts).where(and(eq(oauthAccounts.userId, session.userId), eq(oauthAccounts.provider, 'github'))).limit(1);
@@ -335,8 +343,8 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       return context.json({ status: checks.every((check) => check.status === 'fulfilled') ? 'ok' : 'degraded', checks: checks.map((check) => check.status) });
     });
     app.delete('/api/account/delete', async (context) => {
-      const token = context.req.header('cookie')?.match(/(?:^|;\s*)flakecheck_session=([^;]+)/)?.[1];
-      const auth = await authenticateSession(context.env, token ? decodeURIComponent(token) : undefined);
+      const token = extractSessionToken(context);
+      const auth = await authenticateSession(context.env, token);
       if (!auth) return new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
       await deleteAccount(context.env, auth.userId);
       return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': expiredSessionCookieFor() } });

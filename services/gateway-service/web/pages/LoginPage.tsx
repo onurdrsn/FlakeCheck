@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { apiUrl } from '../http';
+import { apiUrl, friendlyResponseError, readJson, setSessionToken, userFacingMessage } from '../http';
 import { LegalModal } from '../components/LegalModal';
-import { friendlyResponseError, readJson, userFacingMessage } from '../http';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
@@ -17,15 +16,28 @@ export function LoginPage() {
       return;
     }
     setEmail(normalizedEmail);
-    const response = await fetch(apiUrl('/api/auth/otp/request'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: normalizedEmail }) });
+    const response = await fetch(apiUrl('/api/auth/otp/request'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email: normalizedEmail }),
+    });
     if (!response.ok) throw friendlyResponseError(response, 'Unable to send a sign-in code right now.');
     await readJson(response);
     setRequested(true); setStatus('Check your inbox for the one-time sign-in code.');
   }
   async function verifyCode() {
-    const response = await fetch(apiUrl('/api/auth/otp/verify'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code, termsAccepted: accepted, privacyAccepted: accepted }) });
+    const response = await fetch(apiUrl('/api/auth/otp/verify'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email, code, termsAccepted: accepted, privacyAccepted: accepted }),
+    });
     if (!response.ok) throw friendlyResponseError(response, 'That sign-in code is invalid or expired.');
-    await readJson(response);
+    const data = await readJson<{ ok: boolean; token?: string }>(response);
+    if (data?.token) {
+      setSessionToken(data.token);
+    }
     window.location.replace('/dashboard');
   }
   return <main className="auth-page"><section className="auth-card"><a className="brand" href="/"><span className="brand-mark">FC</span><div><strong>FlakeCheck</strong><small>CI reliability control</small></div></a><span className="eyebrow">Workspace access</span><h1>Sign in without another password.</h1><p>Use a one-time code sent to your email, or continue with your identity provider.</p><label className="field-label" htmlFor="email">Work email</label><input id="email" className="input" type="email" autoComplete="email" inputMode="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@company.com" />{requested && <><label className="field-label" htmlFor="code">Sign-in code</label><input id="code" className="input" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value)} placeholder="Paste the code from your email" /></>}<label className="consent"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} /> I agree to the <button type="button" className="inline-link" onClick={() => setLegalDocument('terms')}>Terms</button> and <button type="button" className="inline-link" onClick={() => setLegalDocument('privacy')}>Privacy Policy</button>.</label><button className="button button-primary full" disabled={!email || (requested && (!code || !accepted))} onClick={() => (requested ? verifyCode() : requestCode()).catch((error) => setStatus(userFacingMessage(error, 'We could not complete sign-in. Please try again.')))}>{requested ? 'Enter workspace →' : 'Email me a sign-in code →'}</button>{status && <p className="auth-status">{status}</p>}<div className="auth-divider"><span>or</span></div><div className="oauth-actions"><a className="button button-ghost" href={apiUrl('/api/auth/google')}><GoogleLogo />Google</a><a className="button button-ghost" href={apiUrl('/api/auth/github')}><GitHubLogo />GitHub</a></div></section>{legalDocument && <LegalModal document={legalDocument} onClose={() => setLegalDocument(null)} />}</main>;

@@ -1,11 +1,11 @@
 import { useCallback, useState } from 'react';
 import type { ApiClient } from '../types';
-import { apiUrl, friendlyResponseError, readJson, userFacingMessage } from '../http';
+import { apiUrl, authHeaders, friendlyResponseError, readJson, userFacingMessage } from '../http';
 
 export function useAuth(repo: string, token: string) {
   const [status, setStatus] = useState('Connect a repository to load live evidence');
   const api = useCallback<ApiClient>(async <T,>(path: string, init?: RequestInit) => {
-    const headers = { 'Content-Type': 'application/json', 'X-FlakeCheck-Token': token, 'X-FlakeCheck-Repo': repo };
+    const headers = { 'Content-Type': 'application/json', 'X-FlakeCheck-Token': token, 'X-FlakeCheck-Repo': repo, ...authHeaders() };
     const requestPath = `${path}${path.includes('?') ? '&' : '?'}repo=${encodeURIComponent(repo)}`;
     const response = await fetch(apiUrl(requestPath), {
       ...init,

@@ -1,8 +1,34 @@
+export const SESSION_STORAGE_KEY = 'flakecheck.session_token';
+
+export function getSessionToken(): string | null {
+  try {
+    return localStorage.getItem(SESSION_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setSessionToken(token: string | null): void {
+  try {
+    if (token) {
+      localStorage.setItem(SESSION_STORAGE_KEY, token);
+    } else {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+    }
+  } catch {}
+}
+
+export function authHeaders(): Record<string, string> {
+  const token = getSessionToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export function apiUrl(path: string): string {
   const baseUrl = (import.meta.env.VITE_GATEWAY_URL as string | undefined)?.replace(/\/+$/, '');
   if (!baseUrl) return path;
   return `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
 }
+
 
 export async function readJson<T>(response: Response): Promise<T | null> {
   const text = await response.text();
