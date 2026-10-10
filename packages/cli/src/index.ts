@@ -95,7 +95,16 @@ function openDashboard(url: string) {
   child.unref();
 }
 
-const program = new Command().name('flakecheck').description('HTTP-only FlakeCheck Gateway client').version('0.1.0');
+function getCliVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: string };
+    return pkg.version ?? '0.1.2';
+  } catch {
+    return '0.1.2';
+  }
+}
+
+const program = new Command().name('flakecheck').description('HTTP-only FlakeCheck Gateway client').version(getCliVersion());
 program.command('server').description('open the hosted FlakeCheck web dashboard')
   .option('--url <url>', 'dashboard URL', process.env.FLAKECHECK_DASHBOARD_URL)
   .option('--no-open', 'print the URL without opening a browser')
