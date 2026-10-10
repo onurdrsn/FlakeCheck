@@ -1,6 +1,6 @@
 {
   "name": "@onurdrsn/flakecheck",
-  "version": "0.1.2",
+  "version": "0.1.5",
   "type": "module",
   "description": "CLI for ingesting test reports and reviewing FlakeCheck results",
   "license": "MIT",
@@ -16,6 +16,7 @@
   "bin": {
     "flakecheck": "./dist/index.js"
   },
+  "main": "./dist/index.js",
   "files": [
     "dist"
   ],
