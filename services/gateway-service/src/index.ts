@@ -251,7 +251,7 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       return context.json({ document, version: '1.0', language: context.req.header('accept-language')?.startsWith('tr') ? 'tr' : 'en' });
     });
     app.use('/api/*', async (context, next) => {
-      if (context.req.path.startsWith('/api/auth/') || context.req.path.startsWith('/api/legal/') || context.req.path.startsWith('/api/account/') || context.req.path.startsWith('/api/github/') || context.req.path === '/api/health') return next();
+      if (context.req.path.startsWith('/api/auth/') || context.req.path.startsWith('/api/legal/') || context.req.path.startsWith('/api/account/') || context.req.path.startsWith('/api/github/') || context.req.path === '/api/health' || context.req.path === '/health') return next();
       try {
         const url = new URL(context.req.url);
         const body = context.req.method === 'GET' ? undefined : await context.req.raw.clone().json().catch(() => undefined) as Record<string, unknown> | undefined;
@@ -333,15 +333,39 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       await this.env.QUARANTINE_SERVICE.setQuarantine(context.get('repo'), body.testId, body.state, body.reason);
       return context.json({ ok: true });
     });
-    app.get('/api/health', async (context) => {
-      const checks = await Promise.allSettled([
-        this.env.INGESTION_SERVICE.fetch(new Request('https://internal/health')),
-        this.env.ANALYSIS_SERVICE.fetch(new Request('https://internal/health')),
-        this.env.QUARANTINE_SERVICE.fetch(new Request('https://internal/health')),
-        createDatabase(context.env.DATABASE_URL).execute('select 1'),
+    const healthCheckHandler = async (context: any) => {
+      const runCheck = async (name: string, checkFn: () => Promise<unknown>) => {
+        const start = Date.now();
+        try {
+          const res = await checkFn();
+          if (res instanceof Response && !res.ok) {
+            return { name, status: 'error', durationMs: Date.now() - start, error: `HTTP ${res.status}` };
+          }
+          return { name, status: 'ok', durationMs: Date.now() - start };
+        } catch (error) {
+          return { name, status: 'error', durationMs: Date.now() - start, error: error instanceof Error ? error.message : String(error) };
+        }
+      };
+
+      const [ingestion, analysis, quarantine, database] = await Promise.all([
+        runCheck('Ingestion Service', () => this.env.INGESTION_SERVICE.fetch(new Request('https://internal/health'))),
+        runCheck('Analysis Service', () => this.env.ANALYSIS_SERVICE.fetch(new Request('https://internal/health'))),
+        runCheck('Quarantine Service', () => this.env.QUARANTINE_SERVICE.fetch(new Request('https://internal/health'))),
+        runCheck('Neon Database (PostgreSQL)', () => createDatabase(context.env.DATABASE_URL).execute('select 1')),
       ]);
-      return context.json({ status: checks.every((check) => check.status === 'fulfilled') ? 'ok' : 'degraded', checks: checks.map((check) => check.status) });
-    });
+
+      const services = [ingestion, analysis, quarantine, database];
+      const isOk = services.every((s) => s.status === 'ok');
+
+      return context.json({
+        status: isOk ? 'ok' : 'degraded',
+        gateway: 'ok',
+        services,
+        checks: services.map((s) => s.status === 'ok' ? 'fulfilled' : 'rejected'),
+      });
+    };
+    app.get('/api/health', healthCheckHandler);
+    app.get('/health', healthCheckHandler);
     app.delete('/api/account/delete', async (context) => {
       const token = extractSessionToken(context);
       const auth = await authenticateSession(context.env, token);

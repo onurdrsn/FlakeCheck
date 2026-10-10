@@ -99,8 +99,8 @@ dry-run:
 	done
 
 doctor:
-	$(PNPM) --filter @flakecheck/cli run build
-	./packages/cli/dist/index.js doctor
+	$(PNPM) --filter @onurdrsn/flakecheck run build
+	node ./packages/cli/dist/index.js doctor
 
 db-generate:
 	$(PNPM) run db:generate

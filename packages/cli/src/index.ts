@@ -167,11 +167,131 @@ program.command('export').description('export active flakes')
     const content = options.target === 'csv' ? asCsv(result.items) : options.target === 'markdown' ? asMarkdown(result.items) : options.target === 'json' ? JSON.stringify(result.items, null, 2) : (() => { throw new CliError(1, '--target must be csv, json, or markdown'); })();
     if (options.output) writeFileSync(resolve(cwd(), options.output), `${content}\n`); else console.log(content);
   });
-program.command('doctor').description('check Gateway and Worker health').action(async () => {
-  const result = await client().request<{ status: string; checks: string[] }>('/api/health');
-  console.log(JSON.stringify(result, null, 2));
-  if (result.status !== 'ok') throw new CliError(1, 'Gateway health is degraded');
-});
+type HealthService = { name: string; status: 'ok' | 'error'; durationMs?: number; error?: string };
+type HealthCheckResponse = { status: string; gateway?: string; services?: HealthService[]; checks?: string[] };
+
+program.command('doctor')
+  .description('check local configuration, Gateway, and backend service health')
+  .option('--json', 'output diagnostics as raw JSON')
+  .action(async (options: { json?: boolean }) => {
+    let config: Config | null = null;
+    let configError: string | null = null;
+    try {
+      config = loadConfig();
+    } catch (error) {
+      configError = error instanceof Error ? error.message : String(error);
+    }
+
+    if (!config) {
+      if (options.json) {
+        console.log(JSON.stringify({ status: 'error', error: configError }, null, 2));
+      } else {
+        console.error(`\x1b[31m✖ Configuration Error:\x1b[0m ${configError}`);
+      }
+      throw new CliError(1, 'Doctor check failed: missing or invalid configuration');
+    }
+
+    const api = new GatewayClient(config);
+
+    let health: HealthCheckResponse | null = null;
+    let healthError: string | null = null;
+    try {
+      const healthUrl = new URL('/api/health', `${config.gatewayUrl}/`).toString();
+      const res = await fetch(healthUrl);
+      if (res.ok) {
+        health = (await res.json()) as HealthCheckResponse;
+      } else if (res.status === 401) {
+        // Fallback for older gateway builds requiring auth headers
+        health = await api.request<HealthCheckResponse>('/api/health');
+      } else {
+        throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      }
+    } catch (error) {
+      healthError = error instanceof Error ? error.message : String(error);
+    }
+
+    let repoAuthOk = false;
+    let repoAuthError: string | null = null;
+    try {
+      await api.request<{ activeFlakes?: number }>('/api/summary');
+      repoAuthOk = true;
+    } catch (error) {
+      repoAuthError = error instanceof Error ? error.message : String(error);
+    }
+
+    const defaultServiceNames = [
+      'Ingestion Service Worker',
+      'Analysis Service Worker',
+      'Quarantine Service Worker',
+      'Neon Database (PostgreSQL)',
+    ];
+
+    const services: HealthService[] = health?.services ?? (health?.checks ? health.checks.map((chk, i) => ({
+      name: defaultServiceNames[i] ?? `Service ${i + 1}`,
+      status: chk === 'fulfilled' ? 'ok' : 'error',
+    })) : []);
+
+    const overallHealthy = Boolean(health && health.status === 'ok');
+
+    if (options.json) {
+      console.log(JSON.stringify({
+        status: overallHealthy ? 'ok' : 'degraded',
+        config: {
+          path: configPath,
+          repo: config.repo,
+          gatewayUrl: config.gatewayUrl,
+          tokenConfigured: true,
+        },
+        repositoryAuth: {
+          status: repoAuthOk ? 'ok' : 'error',
+          error: repoAuthError,
+        },
+        gateway: health?.gateway ?? (health ? 'ok' : 'unreachable'),
+        services,
+        ...(healthError ? { gatewayError: healthError } : {}),
+      }, null, 2));
+    } else {
+      console.log('\x1b[1m\x1b[36m🩺 FlakeCheck Doctor Diagnostics\x1b[0m\n');
+      console.log('\x1b[1m[Local Configuration]\x1b[0m');
+      console.log(`  \x1b[32m✔\x1b[0m Config file: ${basename(configPath)} (loaded)`);
+      console.log(`  \x1b[32m✔\x1b[0m Repository: ${config.repo}`);
+      console.log(`  \x1b[32m✔\x1b[0m Gateway URL: ${config.gatewayUrl}`);
+      console.log(`  \x1b[32m✔\x1b[0m API Token: ${config.token.slice(0, 6)}...${config.token.slice(-4)}`);
+
+      console.log('\n\x1b[1m[Repository Authentication]\x1b[0m');
+      if (repoAuthOk) {
+        console.log(`  \x1b[32m✔\x1b[0m Verified token access for ${config.repo}`);
+      } else {
+        console.log(`  \x1b[33m!\x1b[0m Repository access check: ${repoAuthError}`);
+      }
+
+      console.log('\n\x1b[1m[Gateway & Backend Services]\x1b[0m');
+      if (healthError) {
+        console.log(`  \x1b[31m✖\x1b[0m Gateway unreachable: ${healthError}`);
+      } else {
+        console.log(`  \x1b[32m✔\x1b[0m Gateway Service: Healthy`);
+        for (const s of services) {
+          const latency = s.durationMs !== undefined ? ` (${s.durationMs}ms)` : '';
+          if (s.status === 'ok') {
+            console.log(`  \x1b[32m✔\x1b[0m ${s.name}: Healthy${latency}`);
+          } else {
+            console.log(`  \x1b[31m✖\x1b[0m ${s.name}: Degraded${latency}${s.error ? ` - ${s.error}` : ''}`);
+          }
+        }
+      }
+
+      console.log('\n\x1b[1m[Status Verdict]\x1b[0m');
+      if (overallHealthy && repoAuthOk) {
+        console.log('  \x1b[32m✔ All systems and configurations are operational.\x1b[0m\n');
+      } else if (overallHealthy) {
+        console.log('  \x1b[33m! Services are healthy, but repository token verification requires attention.\x1b[0m\n');
+      } else {
+        console.log('  \x1b[31m✖ Gateway health is degraded or unreachable.\x1b[0m\n');
+      }
+    }
+
+    if (!overallHealthy) throw new CliError(1, 'Gateway health is degraded');
+  });
 program.command('report').description('write a Markdown CI/PR report')
   .option('--format <format>', 'github-pr or markdown', 'github-pr')
   .option('--dashboard <url>', 'dashboard review URL')

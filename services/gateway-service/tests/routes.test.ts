@@ -56,4 +56,20 @@ describe('gateway routes', () => {
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: 'Authentication required' });
   });
+
+  it('returns detailed health status for all services and database', async () => {
+    const { response } = await request('/api/health');
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      gateway: 'ok',
+      services: expect.arrayContaining([
+        expect.objectContaining({ name: 'Ingestion Service' }),
+        expect.objectContaining({ name: 'Analysis Service' }),
+        expect.objectContaining({ name: 'Quarantine Service' }),
+        expect.objectContaining({ name: 'Neon Database (PostgreSQL)' }),
+      ]),
+      checks: expect.any(Array),
+    });
+  });
 });

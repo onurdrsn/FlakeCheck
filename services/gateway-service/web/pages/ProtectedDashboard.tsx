@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { DashboardPage } from './DashboardPage';
 import { apiUrl, authHeaders, setSessionToken } from '../http';
+import { getStoredLocale, translations } from '../i18n';
 
 export function ProtectedDashboard() {
   const [state, setState] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
+  const copy = translations[getStoredLocale()];
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const querySession = params.get('session');
@@ -31,8 +34,20 @@ export function ProtectedDashboard() {
         setState('unauthenticated');
       });
   }, []);
-  if (state === 'loading') return <main className="auth-loading"><span className="brand-mark">FC</span><p>Checking your session…</p></main>;
-  if (state === 'unauthenticated') { window.location.replace('/login'); return null; }
+
+  if (state === 'loading') {
+    return (
+      <main className="auth-loading">
+        <span className="brand-mark">FC</span>
+        <p>{copy.checkingSession}</p>
+      </main>
+    );
+  }
+
+  if (state === 'unauthenticated') {
+    window.location.replace('/login');
+    return null;
+  }
+
   return <DashboardPage />;
 }
-
