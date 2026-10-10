@@ -9,6 +9,15 @@ export type Flake = {
   testName: string;
 };
 
+export type SummaryRun = {
+  id: string;
+  commitSha: string;
+  createdAt: string | Date;
+  totalAttempts?: number;
+  passedAttempts?: number;
+  failedAttempts?: number;
+};
+
 export type Summary = {
   healthScore: number;
   wasteSeconds: number;
@@ -16,6 +25,14 @@ export type Summary = {
   activeFlakes: number;
   runnerCostPerMinute?: number;
   windowLabel?: string;
+  totalRuns?: number;
+  totalAttempts?: number;
+  classifiedTests?: number;
+  cleanTests?: number;
+  lastRunId?: string | null;
+  lastCommitSha?: string | null;
+  lastAnalyzedAt?: string | Date | null;
+  recentRuns?: SummaryRun[];
 };
 
 export type TimelineItem = {

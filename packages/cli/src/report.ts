@@ -2,20 +2,43 @@ export type ReportFlake = { testId?: string; category?: string; confidence?: num
 export type ReportSummary = { wasteSeconds: number; wasteUsd: number; activeFlakes: number };
 
 export function githubMarkdown(summary: ReportSummary, flakes: ReportFlake[], dashboardUrl?: string): string {
-  const rows = flakes.map((item) => `| ${item.testName ?? item.testId ?? '-'} | ${item.category ?? '-'} | ${item.confidence ?? 0}% |`);
+  const isHealthy = summary.activeFlakes === 0;
+  const statusBadge = isHealthy
+    ? '![Status](https://img.shields.io/badge/FlakeCheck-PASSED-brightgreen?style=flat-square)'
+    : `![Status](https://img.shields.io/badge/FlakeCheck-${summary.activeFlakes}%20Flakes%20Detected-critical?style=flat-square)`;
+
+  const rows = flakes.map(
+    (item) => `| \`${item.testName ?? item.testId ?? '-'}\` | **${item.category ?? '-'}** | ${item.confidence ?? 0}% | \`${item.filePath ?? '-'}\` |`
+  );
+
   return [
-    '## FlakeCheck report',
+    '## 🛡️ FlakeCheck Test Reliability Report',
     '',
-    `Detected **${summary.activeFlakes}** active flake(s).`,
+    statusBadge,
     '',
-    '| Test | Category | Confidence |',
-    '|---|---|---:|',
-    ...(rows.length ? rows : ['| None | - | - |']),
+    isHealthy
+      ? '> **✔ All evaluated tests are stable and deterministic.** No test flakiness or environment sensitivity detected.'
+      : `> **⚠ Detected ${summary.activeFlakes} active flaky test(s)** requiring quarantine or investigation.`,
     '',
-    `- Estimated CI waste: **${Math.round(summary.wasteSeconds)}s**`,
-    `- Financial waste: **$${summary.wasteUsd.toFixed(4)}**`,
-    dashboardUrl ? `- [Review evidence in FlakeCheck](${dashboardUrl})` : '',
+    '### 📊 Resource Impact',
+    `| Metric | Value |`,
+    `|:---|:---|`,
+    `| **Active Flakes** | \`${summary.activeFlakes}\` |`,
+    `| **CI Execution Waste** | \`${Math.round(summary.wasteSeconds)}s\` |`,
+    `| **Estimated CI Cost** | \`$${summary.wasteUsd.toFixed(4)}\` |`,
+    '',
+    ...(isHealthy
+      ? []
+      : [
+          '### 🔍 Detected Flaky Tests',
+          '| Test Case | Classification | Confidence | File |',
+          '|:---|:---|---:|:---|',
+          ...rows,
+          '',
+        ]),
+    dashboardUrl ? `🔗 [Open Live FlakeCheck Dashboard](${dashboardUrl})` : '',
     '',
     '<!-- flakecheck:report -->',
   ].filter(Boolean).join('\n');
 }
+

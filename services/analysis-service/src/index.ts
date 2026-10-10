@@ -18,9 +18,26 @@ export class AnalysisEntrypoint extends WorkerEntrypoint<Env> implements Analysi
     const effectiveRunId = runId === 'latest' ? snapshot.runs[0]?.id ?? runId : runId;
     const classifications = classifySnapshot(snapshot, effectiveRunId);
     await writeClassifications(createDatabase(this.env.DATABASE_URL), classifications);
+    const flakyCategories = new Set(['PROVEN_FLAKE', 'ENVIRONMENT_SENSITIVE', 'SUSPECTED_FLAKE']);
+    const flakes = classifications.filter((item) => flakyCategories.has(item.category));
+    const breakdown: Record<string, number> = {};
+    for (const item of classifications) {
+      breakdown[item.category] = (breakdown[item.category] ?? 0) + 1;
+    }
     return {
+      runId: effectiveRunId,
+      windowSize: options?.windowSize ?? 30,
+      runsAnalyzed: snapshot.runs.length,
+      attemptsAnalyzed: snapshot.attempts.length,
       classifiedCount: classifications.length,
-      flakesFound: classifications.filter((item) => ['PROVEN_FLAKE', 'ENVIRONMENT_SENSITIVE', 'SUSPECTED_FLAKE'].includes(item.category)).length,
+      flakesFound: flakes.length,
+      cleanCount: Math.max(0, classifications.length - flakes.length),
+      breakdown,
+      latestRun: snapshot.runs[0] ? {
+        id: snapshot.runs[0].id,
+        commitSha: snapshot.runs[0].commitSha,
+        createdAt: snapshot.runs[0].createdAt,
+      } : null,
     };
   }
 
@@ -31,7 +48,33 @@ export class AnalysisEntrypoint extends WorkerEntrypoint<Env> implements Analysi
     const flakyRunIds = new Set(classifications.filter((item) => flakyCategories.has(item.category)).map((item) => item.runId));
     const waste = calculateWaste(snapshot, flakyRunIds);
     const activeFlakes = classifications.filter((item) => flakyCategories.has(item.category)).length;
-    return { healthScore: Math.max(0, 100 - activeFlakes), ...waste, activeFlakes };
+    const cleanTests = Math.max(0, classifications.length - activeFlakes);
+
+    const recentRuns = snapshot.runs.slice(0, 5).map((run) => {
+      const runAttempts = snapshot.attempts.filter((a) => a.runId === run.id);
+      return {
+        id: run.id,
+        commitSha: run.commitSha,
+        createdAt: run.createdAt,
+        totalAttempts: runAttempts.length,
+        passedAttempts: runAttempts.filter((a) => a.status === 'PASSED').length,
+        failedAttempts: runAttempts.filter((a) => a.status === 'FAILED').length,
+      };
+    });
+
+    return {
+      healthScore: Math.max(0, 100 - activeFlakes),
+      ...waste,
+      activeFlakes,
+      totalRuns: snapshot.runs.length,
+      totalAttempts: snapshot.attempts.length,
+      classifiedTests: classifications.length,
+      cleanTests,
+      lastRunId: snapshot.runs[0]?.id ?? null,
+      lastCommitSha: snapshot.runs[0]?.commitSha ?? null,
+      lastAnalyzedAt: snapshot.runs[0]?.createdAt ?? null,
+      recentRuns,
+    };
   }
 
   async fetch(request: Request): Promise<Response> {

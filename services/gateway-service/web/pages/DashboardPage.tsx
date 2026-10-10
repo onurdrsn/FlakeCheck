@@ -321,6 +321,52 @@ export function DashboardPage() {
             accent
           />
         </section>
+        {summary.recentRuns && summary.recentRuns.length > 0 && (
+          <section className="cost-panel" style={{ marginTop: '1.5rem', width: '100%' }}>
+            <div className="section-head" style={{ marginBottom: '1rem' }}>
+              <div>
+                <h2>{copy.analysisOverview}</h2>
+                <p>{copy.recentIngestedRuns} ({summary.totalRuns ?? summary.recentRuns.length} {copy.totalRunsAnalyzed.toLowerCase()} · {summary.totalAttempts ?? 0} {copy.attempts.toLowerCase()})</p>
+              </div>
+              <span className="period">{summary.cleanTests ?? 0} {copy.cleanTests.toLowerCase()}</span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-color, #232936)', color: 'var(--text-muted, #8892b0)' }}>
+                    <th style={{ padding: '0.6rem 0.8rem' }}>{copy.runId}</th>
+                    <th style={{ padding: '0.6rem 0.8rem' }}>{copy.commit}</th>
+                    <th style={{ padding: '0.6rem 0.8rem' }}>{copy.attempts}</th>
+                    <th style={{ padding: '0.6rem 0.8rem' }}>{copy.lastAnalyzed}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {summary.recentRuns.map((run) => (
+                    <tr key={run.id} style={{ borderBottom: '1px solid var(--border-color, #1f2533)' }}>
+                      <td style={{ padding: '0.6rem 0.8rem', fontFamily: 'monospace', color: 'var(--accent, #38bdf8)' }}>
+                        {run.id.slice(0, 8)}…
+                      </td>
+                      <td style={{ padding: '0.6rem 0.8rem', fontFamily: 'monospace' }}>
+                        {run.commitSha ? run.commitSha.slice(0, 7) : '—'}
+                      </td>
+                      <td style={{ padding: '0.6rem 0.8rem' }}>
+                        <span style={{ color: '#4ade80' }}>{run.passedAttempts ?? run.totalAttempts ?? 0} {copy.passed.toLowerCase()}</span>
+                        {run.failedAttempts ? (
+                          <span style={{ color: '#f87171', marginLeft: '0.5rem' }}>
+                            {run.failedAttempts} {copy.failed.toLowerCase()}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td style={{ padding: '0.6rem 0.8rem', color: 'var(--text-muted, #8892b0)' }}>
+                        {new Date(run.createdAt).toLocaleString(locale === 'tr' ? 'tr-TR' : 'en-US')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
         <section className="workspace" id="flakes">
           <FlakeList
             flakes={filtered}

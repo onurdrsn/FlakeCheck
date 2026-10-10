@@ -114,6 +114,15 @@ db-push:
 db-seed:
 	$(PNPM) run db:seed
 
+flakecheck-update:
+	$(PNPM) --filter @onurdrsn/flakecheck exec npm version patch
+
+flakecheck-build:
+	$(PNPM) --filter @onurdrsn/flakecheck run build
+
+flakecheck-publish:
+	$(PNPM) --filter @onurdrsn/flakecheck publish --access public
+
 clean:
 	@set -e; \
 	for path in packages/*/dist services/*/dist services/gateway-service/public/assets services/gateway-service/public/index.html; do \

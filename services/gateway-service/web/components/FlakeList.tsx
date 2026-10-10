@@ -49,7 +49,15 @@ export function FlakeList({
       </div>
       <div className="table">
         {flakes.length === 0 ? (
-          <div className="empty">{labels.noActiveFlakes}</div>
+          <div className="empty" style={{ padding: '2.5rem 1rem', textAlign: 'center' }}>
+            <div style={{ fontSize: '1.8rem', marginBottom: '0.5rem', color: '#4ade80' }}>✔</div>
+            <strong style={{ display: 'block', fontSize: '1rem', color: 'var(--text-color, #f1f5f9)', marginBottom: '0.4rem' }}>
+              {labels.allTestsDeterministic}
+            </strong>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted, #8892b0)', maxWidth: '420px', marginLeft: 'auto', marginRight: 'auto' }}>
+              {labels.allTestsDeterministicDesc}
+            </p>
+          </div>
         ) : (
           flakes.map((flake) => (
             <button

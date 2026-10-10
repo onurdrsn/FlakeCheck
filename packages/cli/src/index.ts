@@ -130,6 +130,41 @@ program.command('init').description('create a repository-scoped CLI configuratio
     writeFileSync(configPath, `${JSON.stringify({ gatewayUrl: options.gateway.replace(/\/+$/, ''), repo: options.repo, token: options.token }, null, 2)}\n`, { mode: 0o600 });
     console.log(`Wrote ${configPath}`);
   });
+class Spinner {
+  private timer?: NodeJS.Timeout;
+  private frame = 0;
+  private frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+  private isTty: boolean;
+
+  constructor(private message: string) {
+    this.isTty = Boolean(process.stdout.isTTY);
+  }
+
+  start() {
+    if (!this.isTty) {
+      console.log(`... ${this.message}`);
+      return this;
+    }
+    process.stdout.write(`\x1b[?25l\x1b[36m${this.frames[0]}\x1b[0m ${this.message}`);
+    this.timer = setInterval(() => {
+      this.frame = (this.frame + 1) % this.frames.length;
+      process.stdout.write(`\r\x1b[36m${this.frames[this.frame]}\x1b[0m ${this.message}`);
+    }, 80);
+    return this;
+  }
+
+  stop(status: 'ok' | 'error' = 'ok', finishMessage?: string) {
+    if (this.timer) clearInterval(this.timer);
+    const msg = finishMessage ?? this.message;
+    if (this.isTty) {
+      const symbol = status === 'ok' ? '\x1b[32m✔\x1b[0m' : '\x1b[31m✖\x1b[0m';
+      process.stdout.write(`\r${symbol} ${msg}\x1b[K\n\x1b[?25h`);
+    } else if (finishMessage) {
+      console.log(`${status === 'ok' ? '✔' : '✖'} ${finishMessage}`);
+    }
+  }
+}
+
 program.command('ingest <fileOrGlob>').description('stream a test report to the Gateway')
   .requiredOption('--format <type>', 'report format', validFormat)
   .action(async (input: string, options: { format: Format }) => {
@@ -138,17 +173,82 @@ program.command('ingest <fileOrGlob>').description('stream a test report to the 
     if (!files.length) throw new CliError(1, `No files matched ${input}`);
     for (const file of files) {
       if (!existsSync(file)) throw new CliError(1, `Report does not exist: ${posixPath(file)}`);
-      const response = await api.request<{ runId: string; ingestedAttempts: number }>('/api/ingest', { method: 'POST', headers: { 'X-FlakeCheck-Format': options.format, 'Content-Type': 'application/octet-stream' }, body: Readable.toWeb(createReadStream(file)) as ReadableStream<Uint8Array> });
-      console.log(`${posixPath(file)}: ${response.runId} (${response.ingestedAttempts} attempts)`);
+      const spinner = new Spinner(`Streaming ${basename(file)} to FlakeCheck Gateway...`).start();
+      try {
+        const response = await api.request<{ runId: string; ingestedAttempts: number }>('/api/ingest', { method: 'POST', headers: { 'X-FlakeCheck-Format': options.format, 'Content-Type': 'application/octet-stream' }, body: Readable.toWeb(createReadStream(file)) as ReadableStream<Uint8Array> });
+        spinner.stop('ok', `${posixPath(file)}: ${response.runId} (${response.ingestedAttempts} attempts ingested)`);
+      } catch (err) {
+        spinner.stop('error', `Failed to ingest ${posixPath(file)}`);
+        throw err;
+      }
     }
   });
+
+type AnalysisDetailResponse = {
+  classifiedCount: number;
+  flakesFound: number;
+  cleanCount?: number;
+  runsAnalyzed?: number;
+  attemptsAnalyzed?: number;
+  windowSize?: number;
+  runId?: string;
+  breakdown?: Record<string, number>;
+  latestRun?: { id: string; commitSha: string; createdAt: string } | null;
+};
+
 program.command('analyze').description('classify the current repository window')
   .option('--window <runs>', 'window size', (value) => Number.parseInt(value, 10), 30)
   .option('--fail-on-flake', 'exit 2 when flakes are found')
-  .action(async (options: { window: number; failOnFlake?: boolean }) => {
+  .option('--json', 'output raw JSON')
+  .action(async (options: { window: number; failOnFlake?: boolean; json?: boolean }) => {
     const api = client(); const config = loadConfig();
-    const result = await api.request<{ classifiedCount: number; flakesFound: number }>('/api/analyze', { method: 'POST', body: JSON.stringify({ repo: config.repo, runId: 'latest', windowSize: options.window }), headers: { 'Content-Type': 'application/json' } });
-    console.log(JSON.stringify(result, null, 2));
+    const spinner = new Spinner(`Analyzing repository window (${options.window} runs)...`).start();
+    let result: AnalysisDetailResponse;
+    try {
+      result = await api.request<AnalysisDetailResponse>('/api/analyze', {
+        method: 'POST',
+        body: JSON.stringify({ repo: config.repo, runId: 'latest', windowSize: options.window }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      spinner.stop('ok', 'Analysis complete.');
+    } catch (err) {
+      spinner.stop('error', 'Analysis failed.');
+      throw err;
+    }
+
+    if (options.json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log('\n\x1b[1m\x1b[36m📊 FlakeCheck Analysis Results\x1b[0m');
+      console.log(`  \x1b[36mRepository:\x1b[0m ${config.repo}`);
+      console.log(`  \x1b[36mAnalysis Run ID:\x1b[0m ${result.runId ?? 'latest'}`);
+      console.log(`  \x1b[36mWindow Scope:\x1b[0m ${result.runsAnalyzed ?? result.windowSize ?? options.window} runs analyzed`);
+      if (result.attemptsAnalyzed !== undefined) {
+        console.log(`  \x1b[36mTotal Attempts Evaluated:\x1b[0m ${result.attemptsAnalyzed}`);
+      }
+
+      console.log('\n\x1b[1m[Classification Breakdown]\x1b[0m');
+      console.log(`  Total Tests Evaluated: \x1b[1m${result.classifiedCount}\x1b[0m`);
+      console.log(`  Stable / Clean Tests:  \x1b[32m${result.cleanCount ?? Math.max(0, result.classifiedCount - result.flakesFound)}\x1b[0m`);
+      console.log(`  Flakes Detected:       ${result.flakesFound > 0 ? `\x1b[31m${result.flakesFound}\x1b[0m` : `\x1b[32m0\x1b[0m`}`);
+
+      if (result.breakdown && Object.keys(result.breakdown).length > 0) {
+        console.log('\n\x1b[1m[Category Distribution]\x1b[0m');
+        for (const [category, count] of Object.entries(result.breakdown)) {
+          const isFlaky = ['PROVEN_FLAKE', 'ENVIRONMENT_SENSITIVE', 'SUSPECTED_FLAKE'].includes(category);
+          const color = isFlaky ? '\x1b[33m' : '\x1b[32m';
+          console.log(`  ${color}•\x1b[0m ${category.padEnd(25)}: ${count}`);
+        }
+      }
+
+      console.log('\n\x1b[1m[Verdict]\x1b[0m');
+      if (result.flakesFound === 0) {
+        console.log('  \x1b[32m✔ All evaluated tests in this window are deterministic and stable.\x1b[0m\n');
+      } else {
+        console.log(`  \x1b[31m✖ ${result.flakesFound} flaky test(s) detected. Run "flakecheck flakes" to inspect details.\x1b[0m\n`);
+      }
+    }
+
     if (options.failOnFlake && result.flakesFound > 0) throw new CliError(2, `${result.flakesFound} flakes found`);
   });
 program.command('flakes').description('list active flakes')
