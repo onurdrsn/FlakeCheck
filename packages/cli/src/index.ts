@@ -98,9 +98,10 @@ function openDashboard(url: string) {
 function getCliVersion(): string {
   try {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version?: string };
-    return pkg.version ?? '0.1.2';
-  } catch {
-    return '0.1.2';
+    if (!pkg.version) throw new Error('package.json does not define a version');
+    return pkg.version;
+  } catch (error) {
+    throw new Error(`Failed to read CLI version from package.json: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
