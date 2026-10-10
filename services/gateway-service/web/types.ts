@@ -47,4 +47,37 @@ export type TimelineItem = {
   };
 };
 
+export type RunDetailAttempt = {
+  id: string;
+  testId: string;
+  attemptNumber: number;
+  status: string;
+  durationMs: number;
+  failureSignature?: string | null;
+  rawError?: string | null;
+  createdAt: string | Date;
+  testName: string;
+  filePath: string;
+  suiteName: string;
+  classification?: {
+    category: string;
+    confidence: number;
+    evidence: Record<string, unknown>;
+  } | null;
+};
+
+export type RunDetails = {
+  run: {
+    id: string;
+    repo: string;
+    branch: string;
+    commitSha: string;
+    ciWorkflow: string;
+    envFingerprint: string;
+    createdAt: string | Date;
+  };
+  attempts: RunDetailAttempt[];
+};
+
 export type ApiClient = <T>(path: string, init?: RequestInit) => Promise<T>;
+

@@ -6,9 +6,10 @@ import { EvidenceCard } from '../components/EvidenceCard';
 import { FlakeList } from '../components/FlakeList';
 import { Navbar } from '../components/Navbar';
 import { QuarantineModal } from '../components/QuarantineModal';
+import { RunDetailsModal } from '../components/RunDetailsModal';
 import { StatsCard } from '../components/StatsCard';
 import { WorkspaceConnector } from '../components/WorkspaceConnector';
-import type { Flake } from '../types';
+import type { Flake, RunDetails } from '../types';
 import { apiUrl, authHeaders, friendlyResponseError, setSessionToken, userFacingMessage } from '../http';
 
 const WORKSPACE_REPOSITORY_KEY = 'flakecheck.workspace.repository';
@@ -61,10 +62,29 @@ export function DashboardPage() {
   const [pendingConnect, setPendingConnect] = useState(() => Boolean(window.localStorage.getItem(WORKSPACE_REPOSITORY_KEY)));
   const [bootstrapping, setBootstrapping] = useState(true);
   const [repositoryTokenConfigured, setRepositoryTokenConfigured] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [runDetails, setRunDetails] = useState<RunDetails | null>(null);
+  const [loadingRunDetails, setLoadingRunDetails] = useState(false);
+  const [runDetailsError, setRunDetailsError] = useState<string | null>(null);
 
   const copy = translations[locale];
   const { api, connect, status, setStatus } = useAuth(repo, token);
   const { summary, flakes, selected, setSelected, setSummary, setFlakes, timeline, load, loadTimeline } = useFlakes(api);
+
+  const openRunDetails = async (runId: string) => {
+    setSelectedRunId(runId);
+    setRunDetails(null);
+    setRunDetailsError(null);
+    setLoadingRunDetails(true);
+    try {
+      const data = await api<RunDetails>(`/api/runs/${encodeURIComponent(runId)}`);
+      setRunDetails(data);
+    } catch (err) {
+      setRunDetailsError(userFacingMessage(err, copy.failedToLoadRun));
+    } finally {
+      setLoadingRunDetails(false);
+    }
+  };
 
   const isConnected = Boolean(summary && repo.trim() && connectedRepo === repo.trim());
 
@@ -342,9 +362,38 @@ export function DashboardPage() {
                 </thead>
                 <tbody>
                   {summary.recentRuns.map((run) => (
-                    <tr key={run.id} style={{ borderBottom: '1px solid var(--border-color, #1f2533)' }}>
-                      <td style={{ padding: '0.6rem 0.8rem', fontFamily: 'monospace', color: 'var(--accent, #38bdf8)' }}>
-                        {run.id.slice(0, 8)}…
+                    <tr
+                      key={run.id}
+                      onClick={() => void openRunDetails(run.id)}
+                      style={{
+                        borderBottom: '1px solid var(--border-color, #1f2533)',
+                        cursor: 'pointer',
+                        transition: 'background 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = '#151d28'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <td style={{ padding: '0.6rem 0.8rem' }}>
+                        <button
+                          type="button"
+                          className="text-link"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            fontFamily: 'monospace',
+                            color: 'var(--accent, #38bdf8)',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            fontSize: '0.9rem',
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void openRunDetails(run.id);
+                          }}
+                        >
+                          {run.id.slice(0, 8)}… ⧉
+                        </button>
                       </td>
                       <td style={{ padding: '0.6rem 0.8rem', fontFamily: 'monospace' }}>
                         {run.commitSha ? run.commitSha.slice(0, 7) : '—'}
@@ -352,8 +401,8 @@ export function DashboardPage() {
                       <td style={{ padding: '0.6rem 0.8rem' }}>
                         <span style={{ color: '#4ade80' }}>{run.passedAttempts ?? run.totalAttempts ?? 0} {copy.passed.toLowerCase()}</span>
                         {run.failedAttempts ? (
-                          <span style={{ color: '#f87171', marginLeft: '0.5rem' }}>
-                            {run.failedAttempts} {copy.failed.toLowerCase()}
+                          <span style={{ color: '#f87171', marginLeft: '0.5rem', fontWeight: 600 }}>
+                            {run.failedAttempts} {copy.failed.toLowerCase()} ⚠
                           </span>
                         ) : null}
                       </td>
@@ -632,6 +681,21 @@ export function DashboardPage() {
             </div>
           </div>
         </div>
+      )}
+      {selectedRunId && (
+        <RunDetailsModal
+          runId={selectedRunId}
+          details={runDetails}
+          loading={loadingRunDetails}
+          error={runDetailsError}
+          labels={copy}
+          locale={locale}
+          onClose={() => {
+            setSelectedRunId(null);
+            setRunDetails(null);
+            setRunDetailsError(null);
+          }}
+        />
       )}
     </div>
   );

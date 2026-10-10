@@ -8,7 +8,7 @@ import { authenticate, canonicalRepo, digestHex } from './auth.js';
 import { authenticateSession, AuthRateLimitError, completeOAuth, consumeOtp, decryptProviderToken, deleteAccount, oauthUrl, requestOtp } from './auth-engine.js';
 import { dispatchWebhook } from './webhooks.js';
 import { createDatabase } from './db/client.js';
-import { listFlakes, testTimeline } from './db/queries.js';
+import { listFlakes, testTimeline, getRunDetails } from './db/queries.js';
 
 type GitHubRepo = { full_name: string; private?: boolean; default_branch?: string };
 const isGitHubRepo = (value: unknown): value is GitHubRepo => Boolean(value && typeof value === 'object' && typeof (value as GitHubRepo).full_name === 'string');
@@ -328,6 +328,11 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       return context.json({ page, pageSize, items: await listFlakes(createDatabase(context.env.DATABASE_URL), context.get('repo'), page, pageSize) });
     });
     app.get('/api/tests/:id', async (context) => context.json({ testId: context.req.param('id'), timeline: await testTimeline(createDatabase(context.env.DATABASE_URL), context.get('repo'), context.req.param('id')) }));
+    app.get('/api/runs/:id', async (context) => {
+      const details = await getRunDetails(createDatabase(context.env.DATABASE_URL), context.get('repo'), context.req.param('id'));
+      if (!details) return context.json({ error: 'Run not found' }, 404);
+      return context.json(details);
+    });
     app.post('/api/quarantine', async (context) => {
       const body = await context.req.json<{ testId: string; state: boolean; reason?: string }>();
       await this.env.QUARANTINE_SERVICE.setQuarantine(context.get('repo'), body.testId, body.state, body.reason);

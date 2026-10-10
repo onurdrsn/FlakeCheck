@@ -34,3 +34,46 @@ export async function testTimeline(db: Db, repo: string, testId: string) {
     .orderBy(desc(runs.createdAt));
   return rows;
 }
+
+export async function getRunDetails(db: Db, repo: string, runId: string) {
+  const [run] = await db.select().from(runs).where(and(eq(runs.id, runId), eq(runs.repo, repo))).limit(1);
+  if (!run) return null;
+
+  const attempts = await db.select({
+    id: testAttempts.id,
+    testId: testAttempts.testId,
+    attemptNumber: testAttempts.attemptNumber,
+    status: testAttempts.status,
+    durationMs: testAttempts.durationMs,
+    failureSignature: testAttempts.failureSignature,
+    rawError: testAttempts.rawError,
+    createdAt: testAttempts.createdAt,
+    testName: tests.testName,
+    filePath: tests.filePath,
+    suiteName: tests.suiteName,
+  })
+    .from(testAttempts)
+    .innerJoin(tests, eq(testAttempts.testId, tests.id))
+    .where(eq(testAttempts.runId, runId))
+    .orderBy(desc(testAttempts.createdAt));
+
+  const runClassifications = await db.select({
+    testId: classifications.testId,
+    category: classifications.category,
+    confidence: classifications.confidence,
+    evidence: classifications.evidence,
+    calculatedAt: classifications.calculatedAt,
+  })
+    .from(classifications)
+    .where(eq(classifications.runId, runId));
+
+  const classificationMap = new Map(runClassifications.map((c) => [c.testId, c]));
+
+  return {
+    run,
+    attempts: attempts.map((a) => ({
+      ...a,
+      classification: classificationMap.get(a.testId) ?? null,
+    })),
+  };
+}
