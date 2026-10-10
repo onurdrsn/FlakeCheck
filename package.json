@@ -6,7 +6,11 @@
     "onlyBuiltDependencies": [
       "esbuild",
       "workerd"
-    ]
+    ],
+    "overrides": {
+      "tinypool": ">=2.1.2",
+      "postcss-selector-parser": ">=7.1.6"
+    }
   },
   "engines": {
     "node": ">=20.0.0"
