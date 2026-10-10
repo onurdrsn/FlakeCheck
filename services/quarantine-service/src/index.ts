@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { QuarantineRPC } from '@flakecheck/shared-kernel';
 import { createDatabase } from './db/client.js';
@@ -12,6 +12,7 @@ export interface Env {
   SERVICE_NAME?: string;
   SLACK_WEBHOOK_URL?: string;
   DISCORD_WEBHOOK_URL?: string;
+  CRON_API_KEY?: string;
 }
 
 const ALLOWED_WEBHOOK_DOMAINS = new Set(['hooks.slack.com', 'discord.com', 'discordapp.com']);
@@ -41,6 +42,15 @@ async function notifyGraduation(repo: string, testIds: string[], env: Env): Prom
   }));
 }
 
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
 export class QuarantineEntrypoint extends WorkerEntrypoint<Env> implements QuarantineRPC {
   private store() {
     return new DrizzleQuarantineStore(createDatabase(this.env.DATABASE_URL));
@@ -60,14 +70,60 @@ export class QuarantineEntrypoint extends WorkerEntrypoint<Env> implements Quara
     return generateSkipList(await this.store().listQuarantined(repo), framework);
   }
 
-  async scheduled(): Promise<void> {
+  async runGraduation(): Promise<{ repositoriesProcessed: number; graduated: Record<string, string[]> }> {
     const repositories = new Set((await this.store().listAllQuarantined()).map((test) => test.repo));
-    for (const repo of repositories) await this.evaluateAutoGraduation(repo);
+    const graduated: Record<string, string[]> = {};
+    for (const repo of repositories) {
+      const result = await this.evaluateAutoGraduation(repo);
+      graduated[repo] = result.graduatedTestIds;
+    }
+    return { repositoriesProcessed: repositories.size, graduated };
+  }
+
+  async scheduled(): Promise<void> {
+    await this.runGraduation();
   }
 
   async fetch(request: Request): Promise<Response> {
     const app = new Hono<{ Bindings: Env }>();
     app.get('/health', (context) => context.json({ service: this.env.SERVICE_NAME ?? 'quarantine-service', status: 'ok' }));
+
+    const handleGraduationCron = async (context: Context<{ Bindings: Env }>) => {
+      const expectedKey = context.env.CRON_API_KEY?.trim();
+      if (!expectedKey) {
+        return context.json({ error: 'CRON_API_KEY is not configured on the server' }, 500);
+      }
+
+      const authHeader = context.req.header('Authorization');
+      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
+      const xApiKey = context.req.header('X-API-Key') ?? context.req.header('x-api-key');
+      const queryKey = context.req.query('key') ?? context.req.query('apiKey');
+
+      const providedKey = bearerToken ?? xApiKey ?? queryKey;
+      if (!providedKey || !constantTimeEqual(providedKey, expectedKey)) {
+        return context.json({ error: 'Unauthorized: invalid or missing cron API key' }, 401);
+      }
+
+      try {
+        const result = await this.runGraduation();
+        return context.json({
+          status: 'ok',
+          message: 'Quarantine graduation evaluation completed successfully',
+          timestamp: new Date().toISOString(),
+          ...result,
+        });
+      } catch (error) {
+        console.error('Graduation evaluation failed:', error);
+        return context.json({
+          error: 'Graduation evaluation failed',
+          message: error instanceof Error ? error.message : 'Unknown error',
+        }, 500);
+      }
+    };
+
+    app.all('/cron/graduate', handleGraduationCron);
+    app.all('/api/cron/graduate', handleGraduationCron);
+
     return app.fetch(request, this.env);
   }
 }

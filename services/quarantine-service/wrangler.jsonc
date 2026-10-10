@@ -10,9 +10,12 @@
   "vars": {
     "SERVICE_NAME": "quarantine-service"
   },
-  "triggers": {
-    "crons": ["0 * * * *"]
-  },
+  "routes": [
+    {
+      "pattern": "quarantine.flakecheck.onurd.com.tr",
+      "custom_domain": true
+    }
+  ],
   "observability": {
           "enabled": false,
           "head_sampling_rate": 1,
