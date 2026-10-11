@@ -14,7 +14,7 @@ WORKER_CONFIGS := \
 	build-gateway build-shared build-pages typecheck test dev dev-pages \
 	dev-worker dev-ingestion dev-analysis dev-quarantine deploy deploy-ingestion \
 	deploy-analysis deploy-quarantine deploy-gateway dry-run doctor db-generate \
-	db-migrate db-push db-seed flakecheck-update flakecheck-build flakecheck-publish clean
+	db-migrate db-push db-seed flakecheck-update flakecheck-build flakecheck-publish flakecheck-push clean
 
 
 help: ## Show this help message
@@ -116,13 +116,16 @@ db-seed: ## Seed database with initial synthetic test data
 	$(PNPM) run db:seed
 
 flakecheck-update: ## Bump patch version of @onurdrsn/flakecheck CLI package
-	npm --prefix packages/cli version patch
+	npm --prefix packages/cli version patch --no-git-tag-version
 
 flakecheck-build: ## Build @onurdrsn/flakecheck CLI package
 	$(PNPM) --filter @onurdrsn/flakecheck run build
 
 flakecheck-publish: ## Publish @onurdrsn/flakecheck CLI package to npm registry
 	$(PNPM) --filter @onurdrsn/flakecheck publish --access public --no-git-checks
+
+flakecheck-push: flakecheck-update ## Bump CLI patch version, commit, tag, and push release to GitHub
+	VER=$$(node -p "require('./packages/cli/package.json').version") && git add -A && git commit -m "chore(release): v$$VER" && git tag "v$$VER" && git push && git push origin "v$$VER"
 
 clean: ## Clean build artifacts, dist folders, and web bundles
 	@set -e; \
