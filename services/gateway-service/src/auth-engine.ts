@@ -275,11 +275,21 @@ export async function completeOAuth(env: AuthEnv, provider: 'google' | 'github',
     const tokenResponse = await fetch('https://github.com/login/oauth/access_token', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ code, client_id: env.GITHUB_CLIENT_ID, client_secret: env.GITHUB_CLIENT_SECRET, redirect_uri: callback }) });
     if (!tokenResponse.ok) throw new Error('GitHub OAuth token exchange failed');
     const token = await tokenResponse.json() as { access_token?: string };
-    const profileResponse = await fetch('https://api.github.com/user', { headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token.access_token ?? ''}`, 'User-Agent': 'FlakeCheck' } });
+    providerAccessToken = token.access_token;
+    const githubHeaders = { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token.access_token ?? ''}`, 'User-Agent': 'FlakeCheck' };
+    const profileResponse = await fetch('https://api.github.com/user', { headers: githubHeaders });
     if (!profileResponse.ok) throw new Error('GitHub profile lookup failed');
     const profile = await profileResponse.json() as { id?: number; email?: string | null; login?: string; name?: string | null };
     providerAccountId = String(profile.id ?? ''); displayName = profile.name ?? profile.login;
     email = profile.email ?? '';
+    if (!email) {
+      const emailsResponse = await fetch('https://api.github.com/user/emails', { headers: githubHeaders });
+      if (emailsResponse.ok) {
+        const emails = await emailsResponse.json() as Array<{ email?: string; primary?: boolean; verified?: boolean }>;
+        const primary = emails.find((item) => item.primary && item.verified) ?? emails.find((item) => item.verified) ?? emails[0];
+        email = primary?.email ?? '';
+      }
+    }
     if (!email) throw new Error('GitHub did not return a public email address');
   }
   if (!providerAccountId || !email) throw new Error('OAuth provider returned incomplete identity');

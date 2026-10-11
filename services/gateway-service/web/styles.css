@@ -1584,10 +1584,20 @@ textarea:focus {
   line-height: 1.5;
 }
 
+.connector-panel .eyebrow {
+  display: block;
+}
+
 .connector-panel .button {
   margin-top: 20px;
   width: 100%;
   justify-content: center;
+}
+
+.connector-top-nav {
+  display: flex;
+  align-items: center;
+  margin-bottom: 14px;
 }
 
 .connector-back {
@@ -1595,7 +1605,6 @@ textarea:focus {
   background: none;
   color: var(--muted);
   padding: 0;
-  margin-bottom: 12px;
   display: inline-flex;
   align-items: center;
   gap: 6px;

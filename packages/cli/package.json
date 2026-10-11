@@ -1,6 +1,6 @@
 {
   "name": "@onurdrsn/flakecheck",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "type": "module",
   "description": "CLI for ingesting test reports and reviewing FlakeCheck results",
   "license": "MIT",

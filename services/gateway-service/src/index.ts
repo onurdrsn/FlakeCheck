@@ -214,8 +214,9 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       }
       // Filter and validate only repositories with required fields
       const validRepos = rawData.filter(isGitHubRepo) as GitHubRepo[];
+      const mappedRepos = validRepos.map((repo) => ({ fullName: repo.full_name, visibility: repo.private ? 'private' : 'public', defaultBranch: repo.default_branch }));
       // Return only the fields needed by the frontend
-      return context.json({ repos: validRepos.map((repo) => ({ fullName: repo.full_name, visibility: repo.private ? 'private' : 'public', defaultBranch: repo.default_branch })) });
+      return context.json({ repos: mappedRepos, repositories: mappedRepos });
     });
     app.get('/api/github/repos/:owner/:name/branches', async (context) => {
       const token = extractSessionToken(context);

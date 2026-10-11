@@ -14,7 +14,8 @@ WORKER_CONFIGS := \
 	build-gateway build-shared build-pages typecheck test dev dev-pages \
 	dev-worker dev-ingestion dev-analysis dev-quarantine deploy deploy-ingestion \
 	deploy-analysis deploy-quarantine deploy-gateway dry-run doctor db-generate \
-	db-migrate db-push db-seed flakecheck-update flakecheck-build flakecheck-publish flakecheck-push clean
+	db-migrate db-push db-seed flakecheck-update flakecheck-build flakecheck-publish \
+	flakecheck-commit flakecheck-push clean
 
 
 help: ## Show this help message
@@ -124,11 +125,11 @@ flakecheck-build: ## Build @onurdrsn/flakecheck CLI package
 flakecheck-publish: ## Publish @onurdrsn/flakecheck CLI package to npm registry
 	$(PNPM) --filter @onurdrsn/flakecheck publish --access public --no-git-checks
 
-flakecheck-commit: flakecheck-update ## Bump CLI patch version, commit, tag, and push release to GitHub
+flakecheck-commit: flakecheck-update ## Bump CLI patch version, commit changes, and create release git tag
 	VER=$$(node -p "require('./packages/cli/package.json').version") && git add -A && git commit -m "chore(release): v$$VER" && git tag "v$$VER"
 
-flakecheck-push: ## Git push
-	git push && git push origin "v$$VER"
+flakecheck-push: ## Push commits and current CLI version git tag to GitHub
+	VER=$$(node -p "require('./packages/cli/package.json').version") && git push && git push origin "v$$VER"
 
 
 clean: ## Clean build artifacts, dist folders, and web bundles

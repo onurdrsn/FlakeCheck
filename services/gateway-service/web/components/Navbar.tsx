@@ -164,15 +164,6 @@ export function Navbar({
           value={repo}
           onChange={(event) => onRepoChange(event.target.value)}
         />
-        <label className="field-label" htmlFor="token">{labels.projectToken}</label>
-        <input
-          id="token"
-          className="input"
-          type="password"
-          placeholder={labels.tokenPlaceholder}
-          value={token}
-          onChange={(event) => onTokenChange(event.target.value)}
-        />
         <div className="sidebar-actions">
           {isConnected ? (
             <div className="connected-group">

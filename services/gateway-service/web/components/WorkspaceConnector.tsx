@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { apiUrl } from '../http';
+import { apiUrl, authHeaders } from '../http';
 import type { Locale } from '../i18n';
 import { translations } from '../i18n';
 
@@ -7,10 +7,8 @@ type Repository = { fullName: string; visibility: 'public' | 'private'; defaultB
 
 export function WorkspaceConnector({ onConnect, locale = 'en' }: { onConnect: (repo: string, token: string) => void; locale?: Locale }) {
   const copy = translations[locale];
-  const [step, setStep] = useState<'visibility' | 'public' | 'private' | 'github'>('visibility');
+  const [step, setStep] = useState<'visibility' | 'public' | 'github'>('visibility');
   const [repo, setRepo] = useState('');
-  const [token, setToken] = useState('');
-  const [help, setHelp] = useState(false);
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [selectedRepo, setSelectedRepo] = useState('');
   const [branches, setBranches] = useState<string[]>([]);
@@ -23,14 +21,18 @@ export function WorkspaceConnector({ onConnect, locale = 'en' }: { onConnect: (r
   };
 
   async function loadRepositories() {
+    setError('');
     setStep('github');
-    const response = await fetch(apiUrl('/api/github/repos'), { credentials: 'include' });
+    const response = await fetch(apiUrl('/api/github/repos'), {
+      credentials: 'include',
+      headers: { ...authHeaders() },
+    });
     if (!response.ok) {
       setError(copy.connectGithubFirst);
       return;
     }
-    const data = await response.json() as { repositories: Repository[] };
-    setRepositories(data.repositories);
+    const data = (await response.json()) as { repositories?: Repository[]; repos?: Repository[] };
+    setRepositories(data.repositories ?? data.repos ?? []);
   }
 
   async function selectRepository(value: string) {
@@ -38,8 +40,23 @@ export function WorkspaceConnector({ onConnect, locale = 'en' }: { onConnect: (r
     setBranch('');
     const [owner, name] = value.split('/');
     if (!owner || !name) return;
-    const response = await fetch(apiUrl(`/api/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/branches`), { credentials: 'include' });
-    if (response.ok) setBranches((await response.json() as { branches: string[] }).branches);
+    const response = await fetch(
+      apiUrl(`/api/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/branches`),
+      {
+        credentials: 'include',
+        headers: { ...authHeaders() },
+      },
+    );
+    if (response.ok) {
+      const data = (await response.json()) as { branches: string[] };
+      setBranches(data.branches);
+      const repoMeta = repositories.find((r) => r.fullName === value);
+      if (repoMeta?.defaultBranch && data.branches.includes(repoMeta.defaultBranch)) {
+        setBranch(repoMeta.defaultBranch);
+      } else if (data.branches[0]) {
+        setBranch(data.branches[0]);
+      }
+    }
   }
 
   if (step === 'visibility') {
@@ -53,10 +70,6 @@ export function WorkspaceConnector({ onConnect, locale = 'en' }: { onConnect: (r
             <strong>{copy.publicRepository}</strong>
             <small>{copy.publicDescription}</small>
           </button>
-          <button type="button" onClick={() => setStep('private')}>
-            <strong>{copy.privateRepository}</strong>
-            <small>{copy.privateDescription}</small>
-          </button>
           <button type="button" onClick={() => void loadRepositories()}>
             <strong>{copy.useGithub}</strong>
             <small>{copy.useGithubDescription}</small>
@@ -69,9 +82,11 @@ export function WorkspaceConnector({ onConnect, locale = 'en' }: { onConnect: (r
   if (step === 'public') {
     return (
       <section className="connector-panel">
-        <button type="button" className="connector-back" onClick={() => setStep('visibility')}>
-          ← {copy.back}
-        </button>
+        <div className="connector-top-nav">
+          <button type="button" className="connector-back" onClick={() => setStep('visibility')}>
+            ← {copy.back}
+          </button>
+        </div>
         <span className="eyebrow">{copy.step2of2Public}</span>
         <h1>{copy.enterRepository}</h1>
         <p>{copy.noTokenNeeded}</p>
@@ -95,62 +110,13 @@ export function WorkspaceConnector({ onConnect, locale = 'en' }: { onConnect: (r
     );
   }
 
-  if (step === 'private') {
-    return (
-      <section className="connector-panel">
+  return (
+    <section className="connector-panel">
+      <div className="connector-top-nav">
         <button type="button" className="connector-back" onClick={() => setStep('visibility')}>
           ← {copy.back}
         </button>
-        <span className="eyebrow">{copy.step2of2Private}</span>
-        <h1>{copy.privateTitle}</h1>
-        <p>{copy.tokenRequired}</p>
-        <label className="field-label" htmlFor="private-repo">{copy.repository}</label>
-        <input
-          id="private-repo"
-          className="input"
-          placeholder={copy.repoPlaceholder}
-          value={repo}
-          onChange={(event) => setRepo(event.target.value)}
-        />
-        <label className="field-label" htmlFor="private-token">
-          {copy.projectToken} <button type="button" className="help-button" onClick={() => setHelp(true)} aria-label={copy.tokenHelp}>?</button>
-        </label>
-        <input
-          id="private-token"
-          className="input"
-          type="password"
-          placeholder={copy.tokenPlaceholder}
-          value={token}
-          onChange={(event) => setToken(event.target.value)}
-        />
-        <button
-          type="button"
-          className="button button-primary"
-          disabled={!repo.includes('/') || !token}
-          onClick={() => connectRepository(repo, token)}
-        >
-          {copy.connectRepository} ↗
-        </button>
-        {help && (
-          <div className="modal-backdrop" onClick={() => setHelp(false)}>
-            <div className="modal token-help" onClick={(event) => event.stopPropagation()}>
-              <button type="button" className="modal-close" onClick={() => setHelp(false)}>×</button>
-              <span className="eyebrow">{copy.projectToken}</span>
-              <h2>{copy.tokenHelpTitle}</h2>
-              <p>{copy.tokenHelpBody}</p>
-              <button type="button" className="button button-primary" onClick={() => setHelp(false)}>{copy.ok}</button>
-            </div>
-          </div>
-        )}
-      </section>
-    );
-  }
-
-  return (
-    <section className="connector-panel">
-      <button type="button" className="connector-back" onClick={() => setStep('visibility')}>
-        ← {copy.back}
-      </button>
+      </div>
       <span className="eyebrow">{copy.githubPicker}</span>
       <h1>{copy.chooseRepo}</h1>
       {error ? (
