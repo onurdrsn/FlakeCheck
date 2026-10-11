@@ -10,7 +10,7 @@ export type SupportedFormat =
 
 export async function parseReport(format: string, stream: ReadableStream<Uint8Array>, metadata: ParserMetadata): Promise<ParsedIngestion> {
   const normalizedFormat = format.toLowerCase();
-  const needsFallback = !(metadata.branch && metadata.commit_sha && metadata.ci_workflow_name);
+  const needsFallback = !(metadata.commit_sha || metadata.run_id);
   let parserMetadata = metadata;
   let parserStream = stream;
   if (needsFallback && !(metadata.source_file_path && metadata.file_sha256)) {

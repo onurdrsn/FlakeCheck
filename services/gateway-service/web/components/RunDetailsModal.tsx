@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import type { RunDetails } from '../types';
 import type { Translations, Locale } from '../i18n';
 
@@ -7,7 +8,6 @@ export function RunDetailsModal({
   loading,
   error,
   labels,
-  locale,
   onClose,
 }: {
   runId: string;
@@ -18,14 +18,37 @@ export function RunDetailsModal({
   locale: Locale;
   onClose: () => void;
 }) {
-  const failedAttempts = details?.attempts.filter((a) => a.status === 'FAILED') ?? [];
-  const passedAttempts = details?.attempts.filter((a) => a.status === 'PASSED') ?? [];
+  const [selectedFile, setSelectedFile] = useState<string>('ALL');
+  const [passedPage, setPassedPage] = useState(1);
+  const pageSize = 15;
+
+  const fileGroups = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const attempt of details?.attempts ?? []) {
+      const file = attempt.filePath || '<unknown>';
+      counts.set(file, (counts.get(file) ?? 0) + 1);
+    }
+    return Array.from(counts.entries());
+  }, [details]);
+
+  const filteredAttempts = useMemo(() => {
+    const all = details?.attempts ?? [];
+    if (selectedFile === 'ALL') return all;
+    return all.filter((a) => (a.filePath || '<unknown>') === selectedFile);
+  }, [details, selectedFile]);
+
+  const failedAttempts = filteredAttempts.filter((a) => a.status === 'FAILED');
+  const passedAttempts = filteredAttempts.filter((a) => a.status === 'PASSED');
+  const totalPassedPages = Math.max(1, Math.ceil(passedAttempts.length / pageSize));
+  const currentPassedPage = Math.min(passedPage, totalPassedPages);
+  const startIdx = (currentPassedPage - 1) * pageSize;
+  const visiblePassed = passedAttempts.slice(startIdx, startIdx + pageSize);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
         className="modal account-modal"
-        style={{ maxWidth: '820px', width: '90%', maxHeight: '85vh', overflowY: 'auto' }}
+        style={{ maxWidth: '880px', width: '92%', maxHeight: '88vh', overflowY: 'auto' }}
         role="dialog"
         aria-modal="true"
         onClick={(event) => event.stopPropagation()}
@@ -40,8 +63,8 @@ export function RunDetailsModal({
         </button>
 
         <span className="eyebrow">{labels.runDetailsTitle}</span>
-        <h2 style={{ wordBreak: 'break-all', fontSize: '1.4rem', margin: '0.4rem 0' }}>
-          {runId}
+        <h2 style={{ wordBreak: 'break-all', fontSize: '1.35rem', margin: '0.4rem 0' }}>
+          {runId === 'all' ? labels.combinedRunsTitle : runId}
         </h2>
         <p style={{ color: 'var(--text-muted, #8892b0)', fontSize: '0.9rem', marginBottom: '1.2rem' }}>
           {labels.runDetailsSubtitle}
@@ -64,13 +87,13 @@ export function RunDetailsModal({
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
                 gap: '0.8rem',
                 background: '#0d1117',
                 padding: '1rem',
                 borderRadius: '6px',
                 border: '1px solid var(--border-color, #232936)',
-                marginBottom: '1.5rem',
+                marginBottom: '1.2rem',
               }}
             >
               <div>
@@ -82,8 +105,12 @@ export function RunDetailsModal({
                 <strong>{details.run.branch || 'main'}</strong>
               </div>
               <div>
+                <small style={{ color: 'var(--text-muted, #8892b0)', display: 'block' }}>{labels.testFiles}</small>
+                <strong>{fileGroups.length}</strong>
+              </div>
+              <div>
                 <small style={{ color: 'var(--text-muted, #8892b0)', display: 'block' }}>{labels.totalAttempts}</small>
-                <strong>{details.attempts.length}</strong>
+                <strong>{filteredAttempts.length}</strong>
               </div>
               <div>
                 <small style={{ color: 'var(--text-muted, #8892b0)', display: 'block' }}>{labels.failedAttemptsCount}</small>
@@ -92,6 +119,45 @@ export function RunDetailsModal({
                 </strong>
               </div>
             </div>
+
+            {fileGroups.length > 1 && (
+              <div style={{ marginBottom: '1.25rem' }}>
+                <small style={{ color: 'var(--text-muted, #8892b0)', display: 'block', marginBottom: '0.45rem' }}>
+                  {labels.testFiles} ({fileGroups.length}):
+                </small>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <button
+                    type="button"
+                    className={selectedFile === 'ALL' ? 'button button-primary' : 'button button-ghost'}
+                    onClick={() => {
+                      setSelectedFile('ALL');
+                      setPassedPage(1);
+                    }}
+                    style={{ padding: '0.28rem 0.65rem', fontSize: '0.78rem' }}
+                  >
+                    {labels.allFiles} ({details.attempts.length})
+                  </button>
+                  {fileGroups.map(([file, count]) => {
+                    const shortName = file.split('/').slice(-2).join('/');
+                    return (
+                      <button
+                        key={file}
+                        type="button"
+                        title={file}
+                        className={selectedFile === file ? 'button button-primary' : 'button button-ghost'}
+                        onClick={() => {
+                          setSelectedFile(file);
+                          setPassedPage(1);
+                        }}
+                        style={{ padding: '0.28rem 0.65rem', fontSize: '0.78rem', fontFamily: 'monospace' }}
+                      >
+                        {shortName} ({count})
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {failedAttempts.length > 0 && (
               <div style={{ marginBottom: '1.8rem' }}>
@@ -183,10 +249,10 @@ export function RunDetailsModal({
                 <h3 style={{ fontSize: '1rem', color: '#4ade80', marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <span>✔</span> {labels.passed} ({passedAttempts.length})
                 </h3>
-                <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--border-color, #232936)', borderRadius: '6px' }}>
+                <div style={{ border: '1px solid var(--border-color, #232936)', borderRadius: '6px', overflow: 'hidden' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
                     <tbody>
-                      {passedAttempts.map((attempt) => (
+                      {visiblePassed.map((attempt) => (
                         <tr key={attempt.id} style={{ borderBottom: '1px solid #1a202c' }}>
                           <td style={{ padding: '0.5rem 0.8rem', color: '#4ade80' }}>✔</td>
                           <td style={{ padding: '0.5rem 0.8rem' }}>{attempt.testName}</td>
@@ -201,6 +267,44 @@ export function RunDetailsModal({
                     </tbody>
                   </table>
                 </div>
+                {totalPassedPages > 1 && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginTop: '0.75rem',
+                      fontSize: '0.82rem',
+                      color: 'var(--text-muted, #8892b0)',
+                      flexWrap: 'wrap',
+                      gap: '0.5rem',
+                    }}
+                  >
+                    <span>
+                      {labels.pageLabel} {currentPassedPage} / {totalPassedPages} ({startIdx + 1}–{Math.min(startIdx + pageSize, passedAttempts.length)} / {passedAttempts.length})
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <button
+                        type="button"
+                        className="button button-ghost"
+                        disabled={currentPassedPage <= 1}
+                        onClick={() => setPassedPage((p) => Math.max(1, p - 1))}
+                        style={{ padding: '0.25rem 0.6rem', fontSize: '0.78rem', opacity: currentPassedPage <= 1 ? 0.45 : 1 }}
+                      >
+                        {labels.prevPage}
+                      </button>
+                      <button
+                        type="button"
+                        className="button button-ghost"
+                        disabled={currentPassedPage >= totalPassedPages}
+                        onClick={() => setPassedPage((p) => Math.min(totalPassedPages, p + 1))}
+                        style={{ padding: '0.25rem 0.6rem', fontSize: '0.78rem', opacity: currentPassedPage >= totalPassedPages ? 0.45 : 1 }}
+                      >
+                        {labels.nextPage}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

@@ -66,6 +66,8 @@ export function DashboardPage() {
   const [runDetails, setRunDetails] = useState<RunDetails | null>(null);
   const [loadingRunDetails, setLoadingRunDetails] = useState(false);
   const [runDetailsError, setRunDetailsError] = useState<string | null>(null);
+  const [runsPage, setRunsPage] = useState(1);
+  const runsPageSize = 5;
 
   const copy = translations[locale];
   const { api, connect, status, setStatus } = useAuth(repo, token);
@@ -341,81 +343,150 @@ export function DashboardPage() {
             accent
           />
         </section>
-        {summary.recentRuns && summary.recentRuns.length > 0 && (
-          <section className="cost-panel" style={{ marginTop: '1.5rem', width: '100%' }}>
-            <div className="section-head" style={{ marginBottom: '1rem' }}>
-              <div>
-                <h2>{copy.analysisOverview}</h2>
-                <p>{copy.recentIngestedRuns} ({summary.totalRuns ?? summary.recentRuns.length} {copy.totalRunsAnalyzed.toLowerCase()} · {summary.totalAttempts ?? 0} {copy.attempts.toLowerCase()})</p>
+        {summary.recentRuns && summary.recentRuns.length > 0 && (() => {
+          const allRuns = summary.recentRuns;
+          const totalRunPages = Math.max(1, Math.ceil(allRuns.length / runsPageSize));
+          const currentPage = Math.min(runsPage, totalRunPages);
+          const startIdx = (currentPage - 1) * runsPageSize;
+          const visibleRuns = allRuns.slice(startIdx, startIdx + runsPageSize);
+
+          return (
+            <section className="cost-panel" style={{ marginTop: '1.5rem', width: '100%' }}>
+              <div className="section-head" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <div>
+                  <h2>{copy.analysisOverview}</h2>
+                  <p>{copy.recentIngestedRuns} ({summary.totalRuns ?? allRuns.length} {copy.totalRunsAnalyzed.toLowerCase()} · {summary.totalAttempts ?? 0} {copy.attempts.toLowerCase()})</p>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="button button-ghost"
+                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.82rem' }}
+                    onClick={() => void openRunDetails('all')}
+                  >
+                    {copy.viewAllCombined} ({summary.totalAttempts ?? 0}) ⧉
+                  </button>
+                  <span className="period">{summary.cleanTests ?? 0} {copy.cleanTests.toLowerCase()}</span>
+                </div>
               </div>
-              <span className="period">{summary.cleanTests ?? 0} {copy.cleanTests.toLowerCase()}</span>
-            </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-color, #232936)', color: 'var(--text-muted, #8892b0)' }}>
-                    <th style={{ padding: '0.6rem 0.8rem' }}>{copy.runId}</th>
-                    <th style={{ padding: '0.6rem 0.8rem' }}>{copy.commit}</th>
-                    <th style={{ padding: '0.6rem 0.8rem' }}>{copy.attempts}</th>
-                    <th style={{ padding: '0.6rem 0.8rem' }}>{copy.lastAnalyzed}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.recentRuns.map((run) => (
-                    <tr
-                      key={run.id}
-                      onClick={() => void openRunDetails(run.id)}
-                      style={{
-                        borderBottom: '1px solid var(--border-color, #1f2533)',
-                        cursor: 'pointer',
-                        transition: 'background 0.15s ease',
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = '#151d28'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                    >
-                      <td style={{ padding: '0.6rem 0.8rem' }}>
-                        <button
-                          type="button"
-                          className="text-link"
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            padding: 0,
-                            fontFamily: 'monospace',
-                            color: 'var(--accent, #38bdf8)',
-                            cursor: 'pointer',
-                            textDecoration: 'underline',
-                            fontSize: '0.9rem',
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void openRunDetails(run.id);
-                          }}
-                        >
-                          {run.id.slice(0, 8)}… ⧉
-                        </button>
-                      </td>
-                      <td style={{ padding: '0.6rem 0.8rem', fontFamily: 'monospace' }}>
-                        {run.commitSha ? run.commitSha.slice(0, 7) : '—'}
-                      </td>
-                      <td style={{ padding: '0.6rem 0.8rem' }}>
-                        <span style={{ color: '#4ade80' }}>{run.passedAttempts ?? run.totalAttempts ?? 0} {copy.passed.toLowerCase()}</span>
-                        {run.failedAttempts ? (
-                          <span style={{ color: '#f87171', marginLeft: '0.5rem', fontWeight: 600 }}>
-                            {run.failedAttempts} {copy.failed.toLowerCase()} ⚠
-                          </span>
-                        ) : null}
-                      </td>
-                      <td style={{ padding: '0.6rem 0.8rem', color: 'var(--text-muted, #8892b0)' }}>
-                        {new Date(run.createdAt).toLocaleString(locale === 'tr' ? 'tr-TR' : 'en-US')}
-                      </td>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-color, #232936)', color: 'var(--text-muted, #8892b0)' }}>
+                      <th style={{ padding: '0.6rem 0.8rem' }}>{copy.runId}</th>
+                      <th style={{ padding: '0.6rem 0.8rem' }}>{copy.commit}</th>
+                      <th style={{ padding: '0.6rem 0.8rem' }}>{copy.attempts}</th>
+                      <th style={{ padding: '0.6rem 0.8rem' }}>{copy.lastAnalyzed}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
+                  </thead>
+                  <tbody>
+                    {visibleRuns.map((run) => (
+                      <tr
+                        key={run.id}
+                        onClick={() => void openRunDetails(run.id)}
+                        style={{
+                          borderBottom: '1px solid var(--border-color, #1f2533)',
+                          cursor: 'pointer',
+                          transition: 'background 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = '#151d28'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        <td style={{ padding: '0.6rem 0.8rem' }}>
+                          <button
+                            type="button"
+                            className="text-link"
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              padding: 0,
+                              fontFamily: 'monospace',
+                              color: 'var(--accent, #38bdf8)',
+                              cursor: 'pointer',
+                              textDecoration: 'underline',
+                              fontSize: '0.9rem',
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void openRunDetails(run.id);
+                            }}
+                          >
+                            {run.id.slice(0, 8)}… ⧉
+                          </button>
+                        </td>
+                        <td style={{ padding: '0.6rem 0.8rem', fontFamily: 'monospace' }}>
+                          {run.commitSha ? run.commitSha.slice(0, 7) : '—'}
+                        </td>
+                        <td style={{ padding: '0.6rem 0.8rem' }}>
+                          <span style={{ color: '#4ade80' }}>{run.passedAttempts ?? run.totalAttempts ?? 0} {copy.passed.toLowerCase()}</span>
+                          {run.failedAttempts ? (
+                            <span style={{ color: '#f87171', marginLeft: '0.5rem', fontWeight: 600 }}>
+                              {run.failedAttempts} {copy.failed.toLowerCase()} ⚠
+                            </span>
+                          ) : null}
+                        </td>
+                        <td style={{ padding: '0.6rem 0.8rem', color: 'var(--text-muted, #8892b0)' }}>
+                          {new Date(run.createdAt).toLocaleString(locale === 'tr' ? 'tr-TR' : 'en-US')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {totalRunPages > 1 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginTop: '0.85rem',
+                    paddingTop: '0.65rem',
+                    borderTop: '1px solid var(--border-color, #1f2533)',
+                    fontSize: '0.84rem',
+                    color: 'var(--text-muted, #8892b0)',
+                    flexWrap: 'wrap',
+                    gap: '0.5rem',
+                  }}
+                >
+                  <span>
+                    {copy.pageLabel} {currentPage} / {totalRunPages} ({startIdx + 1}–{Math.min(startIdx + runsPageSize, allRuns.length)} / {allRuns.length})
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <button
+                      type="button"
+                      className="button button-ghost"
+                      disabled={currentPage <= 1}
+                      onClick={() => setRunsPage((p) => Math.max(1, p - 1))}
+                      style={{ padding: '0.28rem 0.65rem', fontSize: '0.8rem', opacity: currentPage <= 1 ? 0.45 : 1 }}
+                    >
+                      {copy.prevPage}
+                    </button>
+                    {Array.from({ length: totalRunPages }, (_, idx) => idx + 1).map((pageNum) => (
+                      <button
+                        key={pageNum}
+                        type="button"
+                        className={pageNum === currentPage ? 'button button-primary' : 'button button-ghost'}
+                        onClick={() => setRunsPage(pageNum)}
+                        style={{ padding: '0.28rem 0.6rem', fontSize: '0.8rem', minWidth: '2rem' }}
+                      >
+                        {pageNum}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="button button-ghost"
+                      disabled={currentPage >= totalRunPages}
+                      onClick={() => setRunsPage((p) => Math.min(totalRunPages, p + 1))}
+                      style={{ padding: '0.28rem 0.65rem', fontSize: '0.8rem', opacity: currentPage >= totalRunPages ? 0.45 : 1 }}
+                    >
+                      {copy.nextPage}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+          );
+        })()}
         <section className="workspace" id="flakes">
           <FlakeList
             flakes={filtered}

@@ -53,4 +53,18 @@ describe('streaming report parsers', () => {
     expect(first.run.id).toBe(second.run.id);
     expect(first.run.id).toMatch(/^[0-9a-f]{64}$/);
   });
+
+  it('groups multiple test report files under a single runId when commit_sha or run_id is shared', async () => {
+    const file1 = await parseReport('junit', await streamFixture('junit.xml'), {
+      repo: 'acme/app',
+      commit_sha: '9ddd9e1',
+      source_file_path: 'reports/unit-1.xml',
+    });
+    const file2 = await parseReport('jest', await streamFixture('jest.json'), {
+      repo: 'acme/app',
+      commit_sha: '9ddd9e1',
+      source_file_path: 'reports/unit-2.json',
+    });
+    expect(file1.run.id).toBe(file2.run.id);
+  });
 });

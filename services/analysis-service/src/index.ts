@@ -50,7 +50,7 @@ export class AnalysisEntrypoint extends WorkerEntrypoint<Env> implements Analysi
     const activeFlakes = classifications.filter((item) => flakyCategories.has(item.category)).length;
     const cleanTests = Math.max(0, classifications.length - activeFlakes);
 
-    const recentRuns = snapshot.runs.slice(0, 5).map((run) => {
+    const recentRuns = snapshot.runs.map((run) => {
       const runAttempts = snapshot.attempts.filter((a) => a.runId === run.id);
       return {
         id: run.id,

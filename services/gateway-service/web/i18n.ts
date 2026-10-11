@@ -231,6 +231,16 @@ export const translations = {
     noFailuresInRun: 'No test failures were recorded in this run.',
     loadingRunDetails: 'Loading run details…',
     failedToLoadRun: 'Could not load details for this run.',
+    viewAllCombined: 'View All Combined',
+    combinedRunsTitle: 'Combined Repository Test Results (All Runs)',
+    testFiles: 'Test Files',
+    allFiles: 'All files',
+    prevPage: '← Prev',
+    nextPage: 'Next →',
+    pageLabel: 'Page',
+    groupByCommit: 'Group by Commit',
+    allRunsView: 'All Runs',
+    runsMerged: 'runs merged',
 
     // Public & Landing
     howItWorks: 'How it works',
@@ -488,6 +498,16 @@ export const translations = {
     noFailuresInRun: 'Bu çalıştırmada başarısız test denemesi kaydedilmedi.',
     loadingRunDetails: 'Çalıştırma detayları yükleniyor…',
     failedToLoadRun: 'Bu çalıştırmanın detayları yüklenemedi.',
+    viewAllCombined: 'Tümünü Toplu Gör',
+    combinedRunsTitle: 'Toplu Test Sonuçları (Tüm Çalıştırmalar)',
+    testFiles: 'Test Dosyaları',
+    allFiles: 'Tüm dosyalar',
+    prevPage: '← Önceki',
+    nextPage: 'Sonraki →',
+    pageLabel: 'Sayfa',
+    groupByCommit: 'Tek Çatı Altında Grupla',
+    allRunsView: 'Ayrı Ayrı Listele',
+    runsMerged: 'çalıştırma birleştirildi',
 
     // Public & Landing
     howItWorks: 'Nasıl çalışır',

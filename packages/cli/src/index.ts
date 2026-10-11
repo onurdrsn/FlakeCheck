@@ -215,18 +215,23 @@ function detectGitContext(): { commitSha?: string; branch?: string } {
   return readGitMetadataFromFs();
 }
 
-program.command('ingest <fileOrGlob>').description('stream a test report to the Gateway')
+program.command('ingest <files...>').description('stream one or more test reports to the Gateway under a single run')
   .requiredOption('--format <type>', 'report format', validFormat)
   .option('--commit <sha>', 'Git commit SHA')
   .option('--branch <name>', 'Git branch name')
-  .action(async (input: string, options: { format: Format; commit?: string; branch?: string }) => {
+  .option('--run-id <id>', 'shared run identifier to group multiple test report files')
+  .action(async (inputs: string[], options: { format: Format; commit?: string; branch?: string; runId?: string }) => {
     const api = client();
-    const files = filesFor(input);
-    if (!files.length) throw new CliError(1, `No files matched ${input}`);
+    const files = [...new Set(inputs.flatMap((input) => filesFor(input)))];
+    if (!files.length) throw new CliError(1, `No files matched ${inputs.join(', ')}`);
 
     const git = detectGitContext();
     const commitSha = options.commit || git.commitSha;
-    const branch = options.branch || git.branch;
+    const branch = options.branch || git.branch || 'local';
+    const sharedRunId = options.runId || commitSha || `batch-${Date.now()}`;
+
+    let totalIngestedAttempts = 0;
+    let groupedRunId = '';
 
     for (const file of files) {
       if (!existsSync(file)) throw new CliError(1, `Report does not exist: ${posixPath(file)}`);
@@ -236,20 +241,28 @@ program.command('ingest <fileOrGlob>').description('stream a test report to the 
           'X-FlakeCheck-Format': options.format,
           'Content-Type': 'application/octet-stream',
           'X-FlakeCheck-Source-File-Path': posixPath(file),
+          'X-FlakeCheck-Branch': branch,
+          'X-FlakeCheck-Ci-Workflow-Name': 'flakecheck-cli',
+          'X-FlakeCheck-Run-Id': sharedRunId,
         };
         if (commitSha) headers['X-FlakeCheck-Commit-Sha'] = commitSha;
-        if (branch) headers['X-FlakeCheck-Branch'] = branch;
 
         const response = await api.request<{ runId: string; ingestedAttempts: number }>('/api/ingest', {
           method: 'POST',
           headers,
           body: Readable.toWeb(createReadStream(file)) as ReadableStream<Uint8Array>,
         });
-        spinner.stop('ok', `${posixPath(file)}: ${response.runId} (${response.ingestedAttempts} attempts ingested) [commit: ${commitSha ? commitSha.slice(0, 7) : 'n/a'}]`);
+        groupedRunId = response.runId;
+        totalIngestedAttempts += response.ingestedAttempts;
+        spinner.stop('ok', `${posixPath(file)}: ${response.runId.slice(0, 8)}… (${response.ingestedAttempts} attempts ingested) [commit: ${commitSha ? commitSha.slice(0, 7) : 'n/a'}]`);
       } catch (err) {
         spinner.stop('error', `Failed to ingest ${posixPath(file)}`);
         throw err;
       }
+    }
+
+    if (files.length > 1 && groupedRunId) {
+      console.log(`\n\x1b[32m✔\x1b[0m Grouped ${files.length} test files under Run ID \x1b[36m${groupedRunId}\x1b[0m (${totalIngestedAttempts} total attempts).`);
     }
   });
 

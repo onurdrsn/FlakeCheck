@@ -33,6 +33,6 @@ jobs:
         run: pnpm run build
 
       - name: Publish to npm (Provenance & OIDC)
-        run: pnpm --filter @onurdrsn/flakecheck publish --provenance --access public --no-git-checks
+        run: pnpm --filter @onurdrsn/flakecheck publish --provenance --access public --tag latest --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

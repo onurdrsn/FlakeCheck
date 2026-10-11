@@ -62,7 +62,18 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
         return origin && allowed.includes(origin) ? origin : '';
       },
       credentials: true,
-      allowHeaders: ['Content-Type', 'Authorization', 'X-FlakeCheck-Token', 'X-FlakeCheck-Repo', 'X-FlakeCheck-Format'],
+      allowHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-FlakeCheck-Token',
+        'X-FlakeCheck-Repo',
+        'X-FlakeCheck-Format',
+        'X-FlakeCheck-Commit-Sha',
+        'X-FlakeCheck-Branch',
+        'X-FlakeCheck-Ci-Workflow-Name',
+        'X-FlakeCheck-Run-Id',
+        'X-FlakeCheck-Source-File-Path',
+      ],
       allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     }));
     app.onError((error, context) => {

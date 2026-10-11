@@ -31,13 +31,14 @@ export async function createRunContext(metadata: ParserMetadata): Promise<Parsed
   const environment = metadataEnvironment(metadata);
   const { fingerprint } = await createEnvironmentFingerprint(environment);
   const branch = metadata.branch || 'local';
-  const commitSha = metadata.commit_sha || metadata.file_sha256 || 'local-report';
+  const commitSha = metadata.commit_sha || metadata.run_id || metadata.file_sha256 || 'local-report';
   const ciWorkflow = metadata.ci_workflow_name || 'local-ingest';
+  const hasSharedRunKey = Boolean(metadata.commit_sha || metadata.run_id);
   const id = await createRunId({
     repository: metadata.repo,
-    branch: metadata.branch ?? '',
-    commitSha: metadata.commit_sha ?? '',
-    ciWorkflowName: metadata.ci_workflow_name ?? '',
+    branch: hasSharedRunKey ? branch : (metadata.branch ?? ''),
+    commitSha: hasSharedRunKey ? commitSha : (metadata.commit_sha ?? ''),
+    ciWorkflowName: hasSharedRunKey ? ciWorkflow : (metadata.ci_workflow_name ?? ''),
     runAttemptNumber: Number(metadata.run_attempt_number || 1),
     sourceFilePath: metadata.source_file_path,
     fileSha256: metadata.file_sha256,

@@ -36,6 +36,57 @@ export async function testTimeline(db: Db, repo: string, testId: string) {
 }
 
 export async function getRunDetails(db: Db, repo: string, runId: string) {
+  if (runId === 'all') {
+    const repoRuns = await db.select().from(runs).where(eq(runs.repo, repo)).orderBy(desc(runs.createdAt)).limit(30);
+    if (!repoRuns.length) return null;
+    const runIds = repoRuns.map((r) => r.id);
+    const attempts = await db.select({
+      id: testAttempts.id,
+      testId: testAttempts.testId,
+      attemptNumber: testAttempts.attemptNumber,
+      status: testAttempts.status,
+      durationMs: testAttempts.durationMs,
+      failureSignature: testAttempts.failureSignature,
+      rawError: testAttempts.rawError,
+      createdAt: testAttempts.createdAt,
+      testName: tests.testName,
+      filePath: tests.filePath,
+      suiteName: tests.suiteName,
+    })
+      .from(testAttempts)
+      .innerJoin(tests, eq(testAttempts.testId, tests.id))
+      .where(inArray(testAttempts.runId, runIds))
+      .orderBy(desc(testAttempts.createdAt));
+
+    const runClassifications = await db.select({
+      testId: classifications.testId,
+      category: classifications.category,
+      confidence: classifications.confidence,
+      evidence: classifications.evidence,
+      calculatedAt: classifications.calculatedAt,
+    })
+      .from(classifications)
+      .where(inArray(classifications.runId, runIds))
+      .orderBy(desc(classifications.calculatedAt));
+
+    const classificationMap = new Map<string, (typeof runClassifications)[number]>();
+    for (const c of runClassifications) {
+      if (!classificationMap.has(c.testId)) classificationMap.set(c.testId, c);
+    }
+
+    const latestRun = repoRuns[0]!;
+    return {
+      run: {
+        ...latestRun,
+        id: 'all',
+      },
+      attempts: attempts.map((a) => ({
+        ...a,
+        classification: classificationMap.get(a.testId) ?? null,
+      })),
+    };
+  }
+
   const [run] = await db.select().from(runs).where(and(eq(runs.id, runId), eq(runs.repo, repo))).limit(1);
   if (!run) return null;
 
