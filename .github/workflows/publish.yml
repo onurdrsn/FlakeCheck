@@ -22,9 +22,10 @@ jobs:
         with:
           node-version: 24
           registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
 
-      - name: Enable Corepack (pnpm)
-        run: corepack enable
+      - name: Install pnpm
+        run: npm install -g pnpm@10.5.2
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
