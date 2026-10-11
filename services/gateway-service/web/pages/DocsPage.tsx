@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PublicNavbar } from '../components/PublicNavbar';
 import { getStoredLocale, translations, type Locale } from '../i18n';
 
@@ -21,6 +21,7 @@ type SectionId =
 export function DocsPage() {
   const [locale] = useState<Locale>(() => getStoredLocale());
   const [activeSection, setActiveSection] = useState<SectionId>('overview');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
     gettingStarted: true,
     ingestion: true,
@@ -31,8 +32,24 @@ export function DocsPage() {
 
   const copy = translations[locale];
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   const toggleCategory = (key: string) => {
     setOpenCategories((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleSelectSection = (sectionId: SectionId) => {
+    setActiveSection(sectionId);
+    setMobileMenuOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const menu = [
@@ -76,45 +93,78 @@ export function DocsPage() {
     },
   ];
 
+  const activeItemLabel =
+    menu.flatMap((c) => c.items).find((item) => item.id === activeSection)?.label ?? copy.docsTopicOverview;
+
   return (
-    <div style={{ background: '#0a0d12', minHeight: '100vh', color: '#e6edf3', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ background: '#0a0d12', minHeight: '100dvh', color: '#e6edf3', display: 'flex', flexDirection: 'column' }}>
       <PublicNavbar />
 
-      {/* Docs Subheader / Breadcrumb Bar */}
-      <div
-        style={{
-          borderBottom: '1px solid #21262d',
-          background: '#0d1117',
-          padding: '0.75rem 2rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.6rem',
-          fontSize: '0.85rem',
-          color: '#8b949e',
-        }}
-      >
-        <span>📖</span>
-        <a href="/" style={{ color: '#8b949e', textDecoration: 'none' }}>{copy.docsBreadcrumbHome}</a>
-        <span>/</span>
-        <span style={{ color: '#f0f6fc', fontWeight: 600 }}>{copy.docsBreadcrumbDocs}</span>
-        <span style={{ margin: '0 0.5rem', opacity: 0.4 }}>|</span>
-        <span style={{ color: '#58a6ff' }}>https://api.flakecheck.onurd.com.tr</span>
+      {/* Docs Subheader / Breadcrumb Bar with Mobile Hamburger Button */}
+      <div className="docs-subheader">
+        <div className="docs-breadcrumb">
+          <button
+            type="button"
+            className="docs-hamburger-btn"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="docs-navigation-drawer"
+            aria-label={locale === 'tr' ? 'Doküman menüsünü aç' : 'Toggle documentation menu'}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+            <span>{locale === 'tr' ? 'Konular' : 'Topics'}</span>
+          </button>
+
+          <span>📖</span>
+          <a href="/" style={{ color: '#8b949e', textDecoration: 'none' }}>{copy.docsBreadcrumbHome}</a>
+          <span>/</span>
+          <span style={{ color: '#f0f6fc', fontWeight: 600 }}>{copy.docsBreadcrumbDocs}</span>
+          <span>/</span>
+          <span style={{ color: '#38bdf8', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }}>
+            {activeItemLabel}
+          </span>
+        </div>
+
+        <span className="docs-api-badge" style={{ color: '#58a6ff', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>
+          https://flakecheck.onurd.com.tr
+        </span>
       </div>
 
-      <div style={{ display: 'flex', flex: 1, maxWidth: '1440px', width: '100%', margin: '0 auto' }}>
-        {/* Left Sidebar (GitHub Docs / Wiki Style) */}
+      <div className="docs-layout">
+        {/* Mobile Backdrop Overlay */}
+        <div
+          className={`docs-backdrop ${mobileMenuOpen ? 'is-open' : ''}`}
+          onClick={() => setMobileMenuOpen(false)}
+          aria-hidden="true"
+        />
+
+        {/* Left Sidebar / Mobile Slide-Over Drawer */}
         <aside
-          style={{
-            width: '320px',
-            borderRight: '1px solid #21262d',
-            background: '#0d1117',
-            padding: '1.5rem 1rem',
-            overflowY: 'auto',
-            height: 'calc(100vh - 120px)',
-            position: 'sticky',
-            top: '0',
-          }}
+          id="docs-navigation-drawer"
+          className={`docs-sidebar ${mobileMenuOpen ? 'is-open' : ''}`}
+          aria-label={locale === 'tr' ? 'Dokümantasyon Konuları' : 'Documentation Topics'}
         >
+          <div className="docs-drawer-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span className="brand-mark" style={{ width: '26px', height: '26px', fontSize: '0.72rem' }}>FC</span>
+              <strong style={{ color: '#f0f6fc', fontSize: '0.92rem' }}>
+                {locale === 'tr' ? 'Dokümantasyon' : 'Documentation'}
+              </strong>
+            </div>
+            <button
+              type="button"
+              className="docs-drawer-close"
+              onClick={() => setMobileMenuOpen(false)}
+              aria-label={locale === 'tr' ? 'Menüyü kapat' : 'Close menu'}
+            >
+              ✕
+            </button>
+          </div>
+
           <div style={{ marginBottom: '1.2rem' }}>
             <input
               type="text"
@@ -176,7 +226,7 @@ export function DocsPage() {
                           <li key={item.id}>
                             <button
                               type="button"
-                              onClick={() => setActiveSection(item.id)}
+                              onClick={() => handleSelectSection(item.id)}
                               style={{
                                 width: '100%',
                                 textAlign: 'left',
@@ -203,10 +253,17 @@ export function DocsPage() {
               );
             })}
           </nav>
+
+          <div className="docs-drawer-quicklinks">
+            <a href="/">{copy.docsBreadcrumbHome}</a>
+            <a href="/status">{locale === 'tr' ? 'Durum' : 'Status'}</a>
+            <a href="/support">{locale === 'tr' ? 'Destek' : 'Support'}</a>
+            <a href="/login">{copy.signInNav}</a>
+          </div>
         </aside>
 
         {/* Right Content Area */}
-        <main style={{ flex: 1, padding: '2.5rem 3.5rem', maxWidth: '960px', lineHeight: 1.65 }}>
+        <main className="docs-main">
           {activeSection === 'overview' && (
             <article>
               <span style={{ color: '#58a6ff', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase' }}>
@@ -336,7 +393,12 @@ export function DocsPage() {
               <h1 style={{ fontSize: '2.4rem', margin: '0.4rem 0 1rem', color: '#f0f6fc' }}>
                 {copy.docsTopicJestVitest}
               </h1>
-              <p style={{ color: '#c9d1d9' }}>Jest veya Vitest testlerinizi JSON çıktısı alacak şekilde çalıştırıp sisteme aktarın:</p>
+              <p style={{ color: '#c9d1d9' }}>Vitest veya Jest testlerinizi JSON çıktısı alacak şekilde çalıştırıp sisteme aktarın:</p>
+              <h3 style={{ color: '#f0f6fc', marginTop: '1.25rem', fontSize: '1.05rem' }}>Vitest Projeleri İçin (ESM / TypeScript)</h3>
+              <pre style={{ background: '#0a0d14', padding: '0.8rem 1rem', borderRadius: '6px', overflowX: 'auto' }}>
+                <code># Vitest çalıştırma ve yükleme:<br/>npx vitest run --reporter=json --outputFile=jest-results.json<br/>flakecheck ingest jest-results.json --format jest</code>
+              </pre>
+              <h3 style={{ color: '#f0f6fc', marginTop: '1.25rem', fontSize: '1.05rem' }}>Jest Projeleri İçin</h3>
               <pre style={{ background: '#0a0d14', padding: '0.8rem 1rem', borderRadius: '6px', overflowX: 'auto' }}>
                 <code># Jest çalıştırma ve yükleme:<br/>npx jest --json --outputFile=jest-results.json<br/>flakecheck ingest jest-results.json --format jest</code>
               </pre>
