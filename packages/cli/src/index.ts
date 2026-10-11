@@ -1,12 +1,9 @@
 #!/usr/bin/env node
-import { createReadStream, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { basename, dirname, isAbsolute, resolve } from 'node:path';
+import { appendFileSync, createReadStream, existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import { cwd, exit } from 'node:process';
-import { platform } from 'node:os';
-import { execSync, spawn } from 'node:child_process';
 import { Command, InvalidArgumentError } from 'commander';
-import { appendFileSync } from 'node:fs';
 import { githubMarkdown } from './report.js';
 
 type Config = { gatewayUrl: string; repo: string; token: string };
@@ -88,11 +85,8 @@ function outputTable(items: Flake[]) {
 function asCsv(items: Flake[]) { return ['test_id,run_id,category,confidence,file_path,test_name', ...items.map((item) => [item.testId, item.runId, item.category, item.confidence, item.filePath, item.testName].map((value) => `"${String(value ?? '').replaceAll('"', '""')}"`).join(','))].join('\n'); }
 function asMarkdown(items: Flake[]) { return ['| Test | Category | Confidence | File |', '|---|---|---:|---|', ...items.map((item) => `| ${item.testName ?? item.testId ?? '-'} | ${item.category ?? '-'} | ${item.confidence ?? 0}% | ${item.filePath ?? '-'} |`)].join('\n'); }
 function addCommonOptions(command: Command) { return command.option('-c, --config <path>', 'configuration path', configPath); }
-function openDashboard(url: string) {
-  const command = platform() === 'darwin' ? 'open' : platform() === 'win32' ? 'cmd' : 'xdg-open';
-  const args = platform() === 'win32' ? ['/c', 'start', '', url] : [url];
-  const child = spawn(command, args, { detached: true, stdio: 'ignore' });
-  child.unref();
+function formatTerminalLink(url: string): string {
+  return process.stdout.isTTY ? `\x1b]8;;${url}\x1b\\${url}\x1b]8;;\x1b\\` : url;
 }
 
 function getCliVersion(): string {
@@ -106,12 +100,15 @@ function getCliVersion(): string {
 }
 
 const program = new Command().name('flakecheck').description('HTTP-only FlakeCheck Gateway client').version(getCliVersion());
-program.command('server').description('open the hosted FlakeCheck web dashboard')
-  .option('--url <url>', 'dashboard URL', process.env.FLAKECHECK_DASHBOARD_URL)
-  .option('--no-open', 'print the URL without opening a browser')
+program.command('server').description('print the hosted FlakeCheck web dashboard URL')
+  .option('--url <url>', 'dashboard URL (defaults to gatewayUrl in .flakecheckrc.json)')
+  .option('--no-open', 'print the plain URL without terminal hyperlink formatting')
   .action((options: { url?: string; open: boolean }) => {
-    const url = options.url?.trim();
-    if (!url) throw new CliError(1, 'Set FLAKECHECK_DASHBOARD_URL or pass --url <dashboard-url>');
+    let url = options.url?.trim();
+    if (!url && existsSync(configPath)) {
+      try { url = loadConfig().gatewayUrl; } catch { /* ignore fallback error */ }
+    }
+    if (!url) throw new CliError(1, 'Pass --url <dashboard-url> or configure gatewayUrl via "flakecheck init"');
     let dashboardUrl: URL;
     try {
       dashboardUrl = new URL(url);
@@ -119,8 +116,8 @@ program.command('server').description('open the hosted FlakeCheck web dashboard'
     } catch (error) {
       throw new CliError(1, `Invalid dashboard URL: ${error instanceof Error ? error.message : String(error)}`);
     }
-    console.log(`FlakeCheck dashboard: ${dashboardUrl.toString()}`);
-    if (options.open) openDashboard(dashboardUrl.toString());
+    const resolved = dashboardUrl.toString();
+    console.log(`FlakeCheck dashboard: ${options.open ? formatTerminalLink(resolved) : resolved}`);
   });
 program.command('init').description('create a repository-scoped CLI configuration')
   .requiredOption('--gateway <url>', 'Gateway URL')
@@ -165,23 +162,57 @@ class Spinner {
   }
 }
 
-function detectGitContext(): { commitSha?: string; branch?: string } {
+function readGitMetadataFromFs(startDir = cwd()): { commitSha?: string; branch?: string } {
   try {
-    const commitSha = (process.env.GITHUB_SHA
-      || process.env.CI_COMMIT_SHA
-      || process.env.GIT_COMMIT
-      || execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim()) || undefined;
-    const branch = (process.env.GITHUB_REF_NAME
-      || process.env.CI_COMMIT_REF_NAME
-      || process.env.GIT_BRANCH
-      || execSync('git branch --show-current', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim()) || undefined;
-    const result: { commitSha?: string; branch?: string } = {};
-    if (commitSha) result.commitSha = commitSha;
-    if (branch) result.branch = branch;
-    return result;
+    let dir = resolve(startDir);
+    let gitDir: string | undefined;
+    while (true) {
+      const candidate = resolve(dir, '.git');
+      if (existsSync(candidate)) {
+        if (isDirectory(candidate)) {
+          gitDir = candidate;
+        } else {
+          const pointer = readFileSync(candidate, 'utf8').trim();
+          if (pointer.startsWith('gitdir:')) {
+            gitDir = resolve(dir, pointer.slice('gitdir:'.length).trim());
+          }
+        }
+        break;
+      }
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+    if (!gitDir) return {};
+    const headPath = resolve(gitDir, 'HEAD');
+    if (!existsSync(headPath)) return {};
+    const head = readFileSync(headPath, 'utf8').trim();
+    if (!head.startsWith('ref:')) {
+      return /^[0-9a-f]{40}$/i.test(head) ? { commitSha: head } : {};
+    }
+    const ref = head.slice('ref:'.length).trim();
+    const branch = ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : undefined;
+    const refFile = resolve(gitDir, ref);
+    let commitSha: string | undefined;
+    if (existsSync(refFile)) {
+      commitSha = readFileSync(refFile, 'utf8').trim() || undefined;
+    } else {
+      const packedRefsPath = resolve(gitDir, 'packed-refs');
+      if (existsSync(packedRefsPath)) {
+        const line = readFileSync(packedRefsPath, 'utf8')
+          .split('\n')
+          .find((entry) => !entry.startsWith('#') && entry.trim().endsWith(` ${ref}`));
+        if (line) commitSha = line.trim().split(/\s+/)[0];
+      }
+    }
+    return { ...(commitSha ? { commitSha } : {}), ...(branch ? { branch } : {}) };
   } catch {
     return {};
   }
+}
+
+function detectGitContext(): { commitSha?: string; branch?: string } {
+  return readGitMetadataFromFs();
 }
 
 program.command('ingest <fileOrGlob>').description('stream a test report to the Gateway')
@@ -344,16 +375,7 @@ program.command('doctor')
     let health: HealthCheckResponse | null = null;
     let healthError: string | null = null;
     try {
-      const healthUrl = new URL('/api/health', `${config.gatewayUrl}/`).toString();
-      const res = await fetch(healthUrl);
-      if (res.ok) {
-        health = (await res.json()) as HealthCheckResponse;
-      } else if (res.status === 401) {
-        // Fallback for older gateway builds requiring auth headers
-        health = await api.request<HealthCheckResponse>('/api/health');
-      } else {
-        throw new Error(`HTTP ${res.status} ${res.statusText}`);
-      }
+      health = await api.request<HealthCheckResponse>('/api/health');
     } catch (error) {
       healthError = error instanceof Error ? error.message : String(error);
     }
@@ -443,7 +465,8 @@ program.command('doctor')
 program.command('report').description('write a Markdown CI/PR report')
   .option('--format <format>', 'github-pr or markdown', 'github-pr')
   .option('--dashboard <url>', 'dashboard review URL')
-  .action(async (options: { format: string; dashboard?: string }) => {
+  .option('--output <file>', 'append Markdown report to a file')
+  .action(async (options: { format: string; dashboard?: string; output?: string }) => {
     if (!['github-pr', 'markdown'].includes(options.format)) throw new CliError(1, '--format must be github-pr or markdown');
     const api = client();
     const [summary, flakeResponse] = await Promise.all([
@@ -451,8 +474,7 @@ program.command('report').description('write a Markdown CI/PR report')
       api.flakes(),
     ]);
     const markdown = githubMarkdown(summary, flakeResponse.items, options.dashboard);
-    const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-    if (summaryPath) appendFileSync(summaryPath, `${markdown}\n`);
+    if (options.output) appendFileSync(resolve(cwd(), options.output), `${markdown}\n`);
     console.log(markdown);
   });
 program.command('demo').description('send a synthetic Jest report through the Gateway').action(async () => {

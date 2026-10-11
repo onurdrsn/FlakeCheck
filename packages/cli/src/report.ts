@@ -4,8 +4,8 @@ export type ReportSummary = { wasteSeconds: number; wasteUsd: number; activeFlak
 export function githubMarkdown(summary: ReportSummary, flakes: ReportFlake[], dashboardUrl?: string): string {
   const isHealthy = summary.activeFlakes === 0;
   const statusBadge = isHealthy
-    ? '![Status](https://img.shields.io/badge/FlakeCheck-PASSED-brightgreen?style=flat-square)'
-    : `![Status](https://img.shields.io/badge/FlakeCheck-${summary.activeFlakes}%20Flakes%20Detected-critical?style=flat-square)`;
+    ? '**Status:** 🟢 `FlakeCheck: PASSED`'
+    : `**Status:** 🔴 \`FlakeCheck: ${summary.activeFlakes} Flakes Detected\``;
 
   const rows = flakes.map(
     (item) => `| \`${item.testName ?? item.testId ?? '-'}\` | **${item.category ?? '-'}** | ${item.confidence ?? 0}% | \`${item.filePath ?? '-'}\` |`
