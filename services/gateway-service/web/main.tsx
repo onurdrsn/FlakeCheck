@@ -6,6 +6,8 @@ import { PrivacyPage } from './pages/PrivacyPage';
 import { ProtectedDashboard } from './pages/ProtectedDashboard';
 import { TermsPage } from './pages/TermsPage';
 import { DocsPage } from './pages/DocsPage';
+import { StatusPage } from './pages/StatusPage';
+import { SupportPage } from './pages/SupportPage';
 import { apiUrl } from './http';
 
 const path = window.location.pathname.replace(/\/+$/, '') || '/';
@@ -20,6 +22,10 @@ if (path.startsWith('/api/auth/') && path.endsWith('/callback')) {
       ? <ProtectedDashboard />
       : path === '/docs'
       ? <DocsPage />
+      : path === '/status'
+      ? <StatusPage />
+      : path === '/support'
+      ? <SupportPage />
       : path === '/terms'
       ? <TermsPage />
       : path === '/privacy'

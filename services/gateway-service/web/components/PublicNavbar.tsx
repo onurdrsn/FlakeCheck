@@ -24,6 +24,8 @@ export function PublicNavbar() {
       <div className="landing-links">
         <a href="/#how-it-works">{copy.howItWorks}</a>
         <a href="/docs">{copy.docsNav}</a>
+        <a href="/status">{locale === 'tr' ? 'Durum' : 'Status'}</a>
+        <a href="/support">{locale === 'tr' ? 'Destek' : 'Support'}</a>
         <a href="/terms">{copy.termsNav}</a>
         <a href="/privacy">{copy.privacyNav}</a>
         <button

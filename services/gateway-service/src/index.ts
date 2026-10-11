@@ -472,7 +472,39 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       });
     };
     app.get('/api/health', healthCheckHandler);
+    app.get('/api/status', healthCheckHandler);
     app.get('/health', healthCheckHandler);
+    app.get('/api/support', (context) => {
+      return context.json({
+        status: 'online',
+        supportUrl: dashboardUrl('/support'),
+        statusUrl: dashboardUrl('/status'),
+        docsUrl: dashboardUrl('/docs'),
+        githubIssuesUrl: 'https://github.com/onurdrsn/FlakeCheck/issues',
+      });
+    });
+    app.post('/api/support', async (context) => {
+      const body = await context.req.json<{ email?: string; repository?: string; category?: string; message?: string }>().catch(() => ({} as Record<string, string>));
+      const email = (body.email ?? '').trim();
+      const message = (body.message ?? '').trim();
+      if (!email || !message) {
+        return context.json({ error: 'Email and message are required.' }, 400);
+      }
+      const ticketId = `FC-${Date.now().toString(36).toUpperCase()}`;
+      if (this.env.SLACK_WEBHOOK_URL || this.env.DISCORD_WEBHOOK_URL) {
+        await dispatchWebhook(
+          'PROVEN_FLAKE_DETECTED',
+          body.repository?.trim() || 'support/inquiry',
+          { ticketId, email, category: body.category ?? 'general', message },
+          {
+            ...(this.env.SLACK_WEBHOOK_URL ? { slackUrl: this.env.SLACK_WEBHOOK_URL } : {}),
+            ...(this.env.DISCORD_WEBHOOK_URL ? { discordUrl: this.env.DISCORD_WEBHOOK_URL } : {}),
+            dashboardUrl: dashboardUrl('/support'),
+          },
+        ).catch(() => undefined);
+      }
+      return context.json({ ok: true, ticketId });
+    });
     app.delete('/api/account/delete', async (context) => {
       const token = extractSessionToken(context);
       const auth = await authenticateSession(context.env, token);

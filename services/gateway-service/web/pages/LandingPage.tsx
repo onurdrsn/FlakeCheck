@@ -2,7 +2,8 @@ import { PublicNavbar } from '../components/PublicNavbar';
 import { getStoredLocale, translations } from '../i18n';
 
 export function LandingPage() {
-  const copy = translations[getStoredLocale()];
+  const locale = getStoredLocale();
+  const copy = translations[locale];
 
   return (
     <main className="landing">
@@ -238,8 +239,10 @@ export function LandingPage() {
           <span className="brand-mark" style={{ width: '26px', height: '26px', fontSize: '10px' }}>FC</span>
           <span>{copy.footerTagline}</span>
         </div>
-        <div style={{ display: 'flex', gap: '18px' }}>
+        <div style={{ display: 'flex', gap: '18px', flexWrap: 'wrap' }}>
           <a className="text-link" href="/docs">{copy.docsNav}</a>
+          <a className="text-link" href="/status">{locale === 'tr' ? 'Durum' : 'Status'}</a>
+          <a className="text-link" href="/support">{locale === 'tr' ? 'Destek' : 'Support'}</a>
           <a className="text-link" href="/terms">{copy.termsNav}</a>
           <a className="text-link" href="/privacy">{copy.privacyNav}</a>
           <a className="text-link" href="/login">{copy.signInNav}</a>
