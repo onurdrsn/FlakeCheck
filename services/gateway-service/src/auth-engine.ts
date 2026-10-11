@@ -250,14 +250,22 @@ export async function deleteAccount(env: AuthEnv, userId: string): Promise<void>
   await createDatabase(env.DATABASE_URL).delete(users).where(eq(users.id, userId));
 }
 
-export function oauthUrl(provider: 'google' | 'github', env: AuthEnv, state: string): string {
-  const callback = `${env.PUBLIC_APP_URL ?? ''}/api/auth/${provider}/callback`;
+export function oauthUrl(provider: 'google' | 'github', env: AuthEnv, state: string, requestOrigin?: string): string {
+  const baseUrl = (env.PUBLIC_APP_URL?.trim() || requestOrigin || '').replace(/\/+$/, '');
+  const callback = `${baseUrl}/api/auth/${provider}/callback`;
   if (provider === 'google') return `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(env.GOOGLE_CLIENT_ID ?? '')}&redirect_uri=${encodeURIComponent(callback)}&response_type=code&scope=openid%20email%20profile&state=${encodeURIComponent(state)}`;
   return `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(env.GITHUB_CLIENT_ID ?? '')}&redirect_uri=${encodeURIComponent(callback)}&response_type=code&scope=read:user%20user:email%20repo&state=${encodeURIComponent(state)}`;
 }
 
-export async function completeOAuth(env: AuthEnv, provider: 'google' | 'github', code: string): Promise<string> {
-  const callback = `${env.PUBLIC_APP_URL ?? ''}/api/auth/${provider}/callback`;
+export async function completeOAuth(
+  env: AuthEnv,
+  provider: 'google' | 'github',
+  code: string,
+  linkUserId?: string,
+  requestOrigin?: string,
+): Promise<string> {
+  const baseUrl = (env.PUBLIC_APP_URL?.trim() || requestOrigin || '').replace(/\/+$/, '');
+  const callback = `${baseUrl}/api/auth/${provider}/callback`;
   let email = '';
   let providerAccountId = '';
   let displayName: string | undefined;
@@ -290,19 +298,31 @@ export async function completeOAuth(env: AuthEnv, provider: 'google' | 'github',
         email = primary?.email ?? '';
       }
     }
+    if (!email && profile.login) {
+      email = `${profile.login}@users.noreply.github.com`;
+    }
     if (!email) throw new Error('GitHub did not return a public email address');
   }
   if (!providerAccountId || !email) throw new Error('OAuth provider returned incomplete identity');
   const db = createDatabase(env.DATABASE_URL);
   const linked = await db.select({ id: oauthAccounts.id, userId: oauthAccounts.userId }).from(oauthAccounts).where(and(eq(oauthAccounts.provider, provider), eq(oauthAccounts.providerAccountId, providerAccountId))).limit(1);
-  let userId = linked[0]?.userId;
+  const encryptedToken = providerAccessToken ? await encryptProviderToken(providerAccessToken, env.JWT_SECRET) : null;
+  let userId = linkUserId || linked[0]?.userId;
   if (!userId) {
     const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email.toLowerCase())).limit(1);
     userId = existing[0]?.id ?? crypto.randomUUID();
     if (!existing[0]) await db.insert(users).values({ id: userId, email: email.toLowerCase(), displayName }).onConflictDoNothing();
-    await db.insert(oauthAccounts).values({ id: crypto.randomUUID(), userId, provider, providerAccountId, accessToken: providerAccessToken ? await encryptProviderToken(providerAccessToken, env.JWT_SECRET) : null }).onConflictDoNothing();
-  } else if (provider === 'github' && providerAccessToken && linked[0]) {
-    await db.update(oauthAccounts).set({ accessToken: await encryptProviderToken(providerAccessToken, env.JWT_SECRET) }).where(eq(oauthAccounts.id, linked[0].id));
+  }
+  if (linked[0]) {
+    await db
+      .update(oauthAccounts)
+      .set({ userId, ...(encryptedToken ? { accessToken: encryptedToken } : {}) })
+      .where(eq(oauthAccounts.id, linked[0].id));
+  } else {
+    await db
+      .insert(oauthAccounts)
+      .values({ id: crypto.randomUUID(), userId, provider, providerAccountId, accessToken: encryptedToken })
+      .onConflictDoNothing();
   }
   return createSession(env, userId);
 }

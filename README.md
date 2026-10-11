@@ -2,7 +2,18 @@
 
 FlakeCheck is a repository-scoped CI reliability platform. It ingests test reports at the edge, normalizes attempts and failure signatures, classifies flaky behavior deterministically, and exposes evidence through a Gateway Worker, React dashboard, and HTTP-only CLI.
 
-[How to use FlakeCheck](HOW-TO-USE.md) · [CLI usage](#cli)
+[Live Dashboard](https://flakecheck.onurd.com.tr) · [Documentation](https://flakecheck.onurd.com.tr/docs) · [System Status](https://flakecheck.onurd.com.tr/status) · [Customer Support](https://flakecheck.onurd.com.tr/support) · [How to use FlakeCheck](HOW-TO-USE.md) · [CLI usage](#cli)
+
+## Product Showcase
+
+### 1. Sectioned CI Reliability Dashboard & Runner Waste Analytics
+![FlakeCheck Dashboard & Diagnostic Overview](docs/screenshots/flakecheck-product-1-dashboard.png)
+
+### 2. Multi-Framework Matrix Run Merging, Forensic Evidence & Quarantine
+![FlakeCheck Multi-File Matrix Merging & Forensic Timeline](docs/screenshots/flakecheck-product-2-forensics.png)
+
+### 3. Drop-In GitHub Actions CLI Gate & Real-Time Edge Telemetry
+![FlakeCheck CLI Release Gate & Edge Microservices Status](docs/screenshots/flakecheck-product-3-cli-status.png)
 
 ## Architecture
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { apiUrl, friendlyResponseError, readJson, setSessionToken, userFacingMessage } from '../http';
+import { apiUrl, friendlyResponseError, readJson, setSessionToken, startOAuth, userFacingMessage } from '../http';
 import { LegalModal } from '../components/LegalModal';
 import { getStoredLocale, setStoredLocale, translations, type Locale } from '../i18n';
 import { LanguageSelector } from '../components/LanguageSelector';
@@ -124,10 +124,24 @@ export function LoginPage() {
           <span>{copy.orText}</span>
         </div>
         <div className="oauth-actions">
-          <a className="button button-ghost" href={apiUrl('/api/auth/google')}>
+          <a
+            className="button button-ghost"
+            href={apiUrl('/api/auth/google')}
+            onClick={(event) => {
+              event.preventDefault();
+              void startOAuth('google');
+            }}
+          >
             <GoogleLogo />Google
           </a>
-          <a className="button button-ghost" href={apiUrl('/api/auth/github')}>
+          <a
+            className="button button-ghost"
+            href={apiUrl('/api/auth/github')}
+            onClick={(event) => {
+              event.preventDefault();
+              void startOAuth('github');
+            }}
+          >
             <GitHubLogo />GitHub
           </a>
         </div>

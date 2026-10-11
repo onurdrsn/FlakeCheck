@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { apiUrl, authHeaders } from '../http';
+import { apiUrl, authHeaders, startOAuth } from '../http';
 import type { Locale } from '../i18n';
 import { translations } from '../i18n';
 
@@ -122,7 +122,16 @@ export function WorkspaceConnector({ onConnect, locale = 'en' }: { onConnect: (r
       {error ? (
         <>
           <p>{error}</p>
-          <a className="button button-primary" href={apiUrl('/api/auth/github')}>{copy.continueGithub} ↗</a>
+          <a
+            className="button button-primary"
+            href={apiUrl('/api/auth/github')}
+            onClick={(event) => {
+              event.preventDefault();
+              void startOAuth('github');
+            }}
+          >
+            {copy.continueGithub} ↗
+          </a>
         </>
       ) : (
         <>

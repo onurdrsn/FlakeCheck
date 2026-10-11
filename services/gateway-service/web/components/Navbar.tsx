@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Locale, Translations } from '../i18n';
 import { LanguageSelector } from './LanguageSelector';
-import { apiUrl } from '../http';
+import { apiUrl, startOAuth } from '../http';
 
 export type DashboardSection = 'overview' | 'history' | 'flakes' | 'cost' | 'settings';
 
@@ -187,7 +187,14 @@ export function Navbar({
               <span>{isConnecting ? '…' : '↗'}</span>
             </button>
           )}
-          <a className="button button-github full" href={apiUrl('/api/auth/github')}>
+          <a
+            className="button button-github full"
+            href={apiUrl('/api/auth/github')}
+            onClick={(event) => {
+              event.preventDefault();
+              void startOAuth('github');
+            }}
+          >
             <svg className="github-logo" viewBox="0 0 24 24" aria-hidden="true">
               <path
                 fill="currentColor"

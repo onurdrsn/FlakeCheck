@@ -63,3 +63,51 @@ export function friendlyResponseError(response: Response, fallback: string): Err
 export function userFacingMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.name === 'UserFacingError' ? error.message : fallback;
 }
+
+export async function startOAuth(provider: 'github' | 'google'): Promise<void> {
+  try {
+    const response = await fetch(apiUrl(`/api/auth/${provider}?mode=json`), {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        ...authHeaders(),
+        Accept: 'application/json',
+      },
+    });
+    if (response.ok) {
+      const data = (await readJson<{ url?: string }>(response)) ?? {};
+      if (data.url && data.url.startsWith('http')) {
+        window.location.assign(data.url);
+        return;
+      }
+    }
+  } catch {
+    // Fall back to direct endpoint navigation
+  }
+  window.location.assign(apiUrl(`/api/auth/${provider}`));
+}
+
+export async function completeOAuthCallback(): Promise<void> {
+  try {
+    const sep = window.location.search ? '&' : '?';
+    const response = await fetch(apiUrl(`${window.location.pathname}${window.location.search}${sep}mode=json`), {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        ...authHeaders(),
+        Accept: 'application/json',
+      },
+    });
+    if (response.ok) {
+      const data = (await readJson<{ ok?: boolean; token?: string; redirectTo?: string }>(response)) ?? {};
+      if (data.token) {
+        setSessionToken(data.token);
+      }
+      window.location.replace(data.redirectTo || '/dashboard');
+      return;
+    }
+  } catch {
+    // Fall back to dashboard
+  }
+  window.location.replace('/dashboard');
+}

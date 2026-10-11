@@ -10,7 +10,7 @@ import { RunDetailsModal } from '../components/RunDetailsModal';
 import { StatsCard } from '../components/StatsCard';
 import { WorkspaceConnector } from '../components/WorkspaceConnector';
 import type { Flake, RunDetails, SummaryRun } from '../types';
-import { apiUrl, authHeaders, friendlyResponseError, setSessionToken, userFacingMessage } from '../http';
+import { apiUrl, authHeaders, friendlyResponseError, setSessionToken, startOAuth, userFacingMessage } from '../http';
 
 const WORKSPACE_REPOSITORY_KEY = 'flakecheck.workspace.repository';
 
@@ -1273,7 +1273,14 @@ export function DashboardPage() {
                     </strong>
                   </div>
                   {!account?.githubConnected && (
-                    <a className="button button-github full" href={apiUrl('/api/auth/github')}>
+                    <a
+                      className="button button-github full"
+                      href={apiUrl('/api/auth/github')}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        void startOAuth('github');
+                      }}
+                    >
                       <span>{copy.connectGithub}</span>
                       <span>↗</span>
                     </a>
@@ -1392,7 +1399,14 @@ export function DashboardPage() {
                 </strong>
               </div>
               {!account?.githubConnected && (
-                <a className="button button-github full" href={apiUrl('/api/auth/github')}>
+                <a
+                  className="button button-github full"
+                  href={apiUrl('/api/auth/github')}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void startOAuth('github');
+                  }}
+                >
                   <svg className="github-logo" viewBox="0 0 24 24" aria-hidden="true">
                     <path
                       fill="currentColor"

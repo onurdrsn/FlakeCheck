@@ -8,12 +8,15 @@ import { TermsPage } from './pages/TermsPage';
 import { DocsPage } from './pages/DocsPage';
 import { StatusPage } from './pages/StatusPage';
 import { SupportPage } from './pages/SupportPage';
-import { apiUrl } from './http';
+import { completeOAuthCallback, startOAuth } from './http';
 
 const path = window.location.pathname.replace(/\/+$/, '') || '/';
 
-if (path.startsWith('/api/auth/') && path.endsWith('/callback')) {
-  window.location.replace(apiUrl(window.location.pathname + window.location.search));
+if (path === '/api/auth/github' || path === '/api/auth/google') {
+  const provider = path.endsWith('/github') ? 'github' : 'google';
+  void startOAuth(provider);
+} else if (path.startsWith('/api/auth/') && path.endsWith('/callback')) {
+  void completeOAuthCallback();
 } else {
   const app =
     path === '/login'

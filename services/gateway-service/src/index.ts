@@ -3,7 +3,7 @@ import { cors } from 'hono/cors';
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { AnalysisRPC, IngestionRPC, QuarantineRPC } from '@flakecheck/shared-kernel';
-import { expiredSessionCookie, oauthAccounts, projectTokens, repositoryAccess, sessionCookie, users } from '@flakecheck/shared-kernel';
+import { expiredSessionCookie, oauthAccounts, projectTokens, repositoryAccess, sessionCookie, signJwt, users, verifyJwt } from '@flakecheck/shared-kernel';
 import { authenticate, canonicalRepo, digestHex } from './auth.js';
 import { authenticateSession, AuthRateLimitError, completeOAuth, consumeOtp, decryptProviderToken, deleteAccount, oauthUrl, requestOtp } from './auth-engine.js';
 import { dispatchWebhook } from './webhooks.js';
@@ -179,12 +179,33 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       const user = userRows[0];
       return new Response(JSON.stringify({ userId: auth.userId, email: user?.email ?? null, displayName: user?.displayName ?? null, githubConnected: Boolean(githubRows[0]) }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookieFor(auth.token) } });
     });
-    app.get('/api/auth/:provider', (context) => {
+    app.get('/api/auth/:provider', async (context) => {
       const provider = context.req.param('provider');
       if (provider !== 'google' && provider !== 'github') return context.json({ error: 'Unsupported OAuth provider' }, 400);
-      const state = crypto.randomUUID();
+      const currentSession = await authenticateSession(context.env, extractSessionToken(context)).catch(() => null);
+      const stateSecret = context.env.JWT_SECRET || 'flakecheck-oauth-state';
+      const state = await signJwt(
+        {
+          nonce: crypto.randomUUID(),
+          provider,
+          ...(currentSession?.userId ? { linkUserId: currentSession.userId } : {}),
+        },
+        stateSecret,
+      );
+      const requestOrigin = new URL(context.req.url).origin;
+      const targetUrl = oauthUrl(provider, context.env, state, requestOrigin);
       const cookieDomain = this.env.SESSION_COOKIE_DOMAIN?.trim() ? `; Domain=${this.env.SESSION_COOKIE_DOMAIN.trim()}` : '';
-      return new Response(null, { status: 302, headers: { Location: oauthUrl(provider, context.env, state), 'Set-Cookie': `flakecheck_oauth_state=${state}; Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax${cookieDomain}` } });
+      const stateCookie = `flakecheck_oauth_state=${encodeURIComponent(state)}; Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax${cookieDomain}`;
+      if (context.req.query('mode') === 'json' || context.req.header('Accept')?.includes('application/json')) {
+        return new Response(JSON.stringify({ url: targetUrl, state }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Set-Cookie': stateCookie },
+        });
+      }
+      return new Response(null, {
+        status: 302,
+        headers: { Location: targetUrl, 'Set-Cookie': stateCookie },
+      });
     });
     app.get('/api/github/repos', async (context) => {
       const token = extractSessionToken(context);
@@ -254,10 +275,31 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       const code = context.req.query('code');
       const state = context.req.query('state');
       const storedState = context.req.header('cookie')?.match(/(?:^|;\s*)flakecheck_oauth_state=([^;]+)/)?.[1];
-      if (!code || !state || !storedState || state !== decodeURIComponent(storedState)) return context.json({ error: 'Invalid OAuth state' }, 400);
+      const stateSecret = context.env.JWT_SECRET || 'flakecheck-oauth-state';
+      const verifiedState = state ? await verifyJwt(state, stateSecret) : null;
+      const cookieMatches = Boolean(storedState && state && state === decodeURIComponent(storedState));
+      if (!code || !state || (!cookieMatches && !verifiedState)) {
+        return context.json({ error: 'Invalid OAuth state' }, 400);
+      }
       try {
-        const token = await completeOAuth(context.env, provider, code);
-        return new Response(null, { status: 302, headers: { Location: dashboardUrl(`/dashboard?session=${encodeURIComponent(token)}`), 'Set-Cookie': sessionCookieFor(token) } });
+        const currentSession = await authenticateSession(context.env, extractSessionToken(context)).catch(() => null);
+        const linkUserId =
+          typeof verifiedState?.linkUserId === 'string'
+            ? verifiedState.linkUserId
+            : currentSession?.userId;
+        const requestOrigin = new URL(context.req.url).origin;
+        const token = await completeOAuth(context.env, provider, code, linkUserId, requestOrigin);
+        const redirectTarget = dashboardUrl(`/dashboard?session=${encodeURIComponent(token)}`);
+        if (context.req.query('mode') === 'json') {
+          return new Response(JSON.stringify({ ok: true, token, redirectTo: redirectTarget }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookieFor(token) },
+          });
+        }
+        return new Response(null, {
+          status: 302,
+          headers: { Location: redirectTarget, 'Set-Cookie': sessionCookieFor(token) },
+        });
       } catch (error) {
         console.error('OAuth callback failed', error);
         return context.json({ error: 'We could not complete sign-in with that provider.' }, 401);
@@ -504,6 +546,13 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
         ).catch(() => undefined);
       }
       return context.json({ ok: true, ticketId });
+    });
+    app.get('/api/webhooks/github-marketplace', (context) => {
+      return context.json({ ok: true, endpoint: 'github-marketplace-webhook', status: 'active' });
+    });
+    app.post('/api/webhooks/github-marketplace', async (context) => {
+      const githubEvent = context.req.header('X-GitHub-Event') ?? 'marketplace_purchase';
+      return context.json({ ok: true, received: true, event: githubEvent });
     });
     app.delete('/api/account/delete', async (context) => {
       const token = extractSessionToken(context);
