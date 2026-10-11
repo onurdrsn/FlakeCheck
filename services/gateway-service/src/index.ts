@@ -8,7 +8,7 @@ import { authenticate, canonicalRepo, digestHex } from './auth.js';
 import { authenticateSession, AuthRateLimitError, completeOAuth, consumeOtp, decryptProviderToken, deleteAccount, oauthUrl, requestOtp } from './auth-engine.js';
 import { dispatchWebhook } from './webhooks.js';
 import { createDatabase } from './db/client.js';
-import { listFlakes, testTimeline, getRunDetails } from './db/queries.js';
+import { listFlakes, testTimeline, getRunDetails, deleteRuns } from './db/queries.js';
 
 type GitHubRepo = { full_name: string; private?: boolean; default_branch?: string };
 const isGitHubRepo = (value: unknown): value is GitHubRepo => Boolean(value && typeof value === 'object' && typeof (value as GitHubRepo).full_name === 'string');
@@ -467,15 +467,33 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       const repo = context.get('repo');
       const details = await getRunDetails(createDatabase(context.env.DATABASE_URL), repo, context.req.param('id'));
       if (!details) return context.json({ error: 'Run not found' }, 404);
-      if (isSyntheticBranch(details.run.branch) || isSyntheticCommitSha(details.run.commitSha)) {
+      if (isSyntheticBranch(details.run.branch) || isSyntheticCommitSha(details.run.commitSha) || ('runs' in details && Array.isArray(details.runs))) {
         const gh = await resolveGitHubRepoContext(repo, context.env.DATABASE_URL, context.get('githubAccessToken'));
         details.run = {
           ...details.run,
           branch: !isSyntheticBranch(details.run.branch) ? details.run.branch : (gh.defaultBranch ?? details.run.branch),
           commitSha: !isSyntheticCommitSha(details.run.commitSha) ? details.run.commitSha : (gh.latestCommitSha ?? ''),
         };
+        if ('runs' in details && Array.isArray(details.runs)) {
+          details.runs = details.runs.map((r) => ({
+            ...r,
+            branch: !isSyntheticBranch(r.branch) ? r.branch : (gh.defaultBranch ?? r.branch),
+            commitSha: !isSyntheticCommitSha(r.commitSha) ? r.commitSha : (gh.latestCommitSha ?? ''),
+          }));
+        }
       }
       return context.json(details);
+    });
+    app.delete('/api/runs/:id', async (context) => {
+      const repo = context.get('repo');
+      const rawId = context.req.param('id');
+      const target = rawId === 'all' ? 'all' : rawId.split(',').map((id) => id.trim()).filter(Boolean);
+      const db = createDatabase(context.env.DATABASE_URL);
+      const result = await deleteRuns(db, repo, target);
+      if (result.remainingRuns && result.remainingRuns > 0) {
+        await this.env.ANALYSIS_SERVICE.analyzeRun(repo, 'latest').catch(() => undefined);
+      }
+      return context.json({ ok: true, ...result });
     });
     app.post('/api/quarantine', async (context) => {
       const body = await context.req.json<{ testId: string; state: boolean; reason?: string }>();

@@ -241,6 +241,15 @@ export const translations = {
     groupByCommit: 'Group by Commit',
     allRunsView: 'All Runs',
     runsMerged: 'runs merged',
+    deleteRun: 'Delete run',
+    clearHistory: 'Clear history',
+    confirmDeleteRun: 'Delete this run from history?',
+    confirmClearHistory: 'Delete all runs from history for this repository?',
+    deletingRun: 'Deleting…',
+    runDeleted: 'Run removed from history',
+    historyCleared: 'Run history cleared',
+    deleteRunError: 'Could not delete run from history.',
+    includedRuns: 'Included Runs',
 
     // Public & Landing
     howItWorks: 'How it works',
@@ -559,6 +568,15 @@ export const translations = {
     groupByCommit: 'Tek Çatı Altında Grupla',
     allRunsView: 'Ayrı Ayrı Listele',
     runsMerged: 'çalıştırma birleştirildi',
+    deleteRun: 'Çalıştırmayı sil',
+    clearHistory: 'Geçmişi temizle',
+    confirmDeleteRun: 'Bu çalıştırmayı geçmişten silmek istediğinize emin misiniz?',
+    confirmClearHistory: 'Bu projeye ait tüm çalıştırma geçmişini silmek istediğinize emin misiniz?',
+    deletingRun: 'Siliniyor…',
+    runDeleted: 'Çalıştırma geçmişten silindi',
+    historyCleared: 'Çalıştırma geçmişi temizlendi',
+    deleteRunError: 'Çalıştırma geçmişten silinemedi.',
+    includedRuns: 'Dahil Edilen Çalıştırmalar',
 
     // Public & Landing
     howItWorks: 'Nasıl çalışır',

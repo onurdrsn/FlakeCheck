@@ -28,16 +28,14 @@ function downloadJson(data: unknown) {
   URL.revokeObjectURL(url);
 }
 
-function downloadCsv(data: Flake[]) {
+function downloadCsvRows(headers: string[], rows: Array<Array<string | number | null | undefined>>) {
+  const escapeCsv = (val: string | number | null | undefined) =>
+    `"${String(val ?? '').replaceAll('"', '""')}"`;
   const csv = [
-    'testId,category,confidence,filePath',
-    ...data.map((item) =>
-      [item.testId, item.category, item.confidence, item.filePath]
-        .map((value) => `"${String(value).replaceAll('"', '""')}"`)
-        .join(','),
-    ),
+    headers.join(','),
+    ...rows.map((row) => row.map(escapeCsv).join(',')),
   ].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
@@ -72,6 +70,7 @@ export function DashboardPage() {
   const [runDetails, setRunDetails] = useState<RunDetails | null>(null);
   const [loadingRunDetails, setLoadingRunDetails] = useState(false);
   const [runDetailsError, setRunDetailsError] = useState<string | null>(null);
+  const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
   const [runsPage, setRunsPage] = useState(1);
   const [githubRepoMeta, setGithubRepoMeta] = useState<{ defaultBranch: string | null; latestCommitSha: string | null }>({
     defaultBranch: null,
@@ -161,6 +160,41 @@ export function DashboardPage() {
     }
   };
 
+  const deleteRunHistory = async (target: 'all' | string | string[]) => {
+    const isAll = target === 'all';
+    const confirmMsg = isAll ? copy.confirmClearHistory : copy.confirmDeleteRun;
+    if (typeof window !== 'undefined' && !window.confirm(confirmMsg)) return;
+    const idParam = isAll ? 'all' : Array.isArray(target) ? target.join(',') : target;
+    const trackingKey = isAll ? 'all' : Array.isArray(target) ? target[0] ?? 'all' : target;
+    setDeletingRunId(trackingKey);
+    try {
+      const result = await api<{ ok: boolean; deletedRuns: number; remainingRuns?: number }>(
+        `/api/runs/${encodeURIComponent(idParam)}`,
+        { method: 'DELETE' },
+      );
+      await load();
+      setStatus(isAll ? copy.historyCleared : copy.runDeleted);
+      if (selectedRunId) {
+        if (
+          isAll ||
+          selectedRunId === idParam ||
+          (Array.isArray(target) && target.includes(selectedRunId)) ||
+          (selectedRunId === 'all' && !result.remainingRuns)
+        ) {
+          setSelectedRunId(null);
+          setRunDetails(null);
+          setRunDetailsError(null);
+        } else if (selectedRunId === 'all') {
+          await openRunDetails('all');
+        }
+      }
+    } catch (err) {
+      setStatus(userFacingMessage(err, copy.deleteRunError));
+    } finally {
+      setDeletingRunId(null);
+    }
+  };
+
   const isConnected = Boolean(summary && repo.trim() && connectedRepo === repo.trim());
 
   const handleLocaleChange = (nextLocale: Locale) => {
@@ -234,10 +268,10 @@ export function DashboardPage() {
       branch: (!isSyntheticBranch(r.branch) && r.branch) ? r.branch : activeBranch,
       commitSha: !isSyntheticCommit(r.commitSha) ? r.commitSha : activeCommitSha,
     }));
-    let list: Array<SummaryRun & { mergedCount?: number }> = rawRuns;
+    let list: Array<SummaryRun & { mergedCount?: number; mergedIds?: string[] }> = rawRuns;
 
     if (groupRunsByCommit) {
-      const map = new Map<string, SummaryRun & { mergedCount: number }>();
+      const map = new Map<string, SummaryRun & { mergedCount: number; mergedIds: string[] }>();
       for (const r of rawRuns) {
         const key = r.commitSha || r.id;
         const existing = map.get(key);
@@ -248,12 +282,14 @@ export function DashboardPage() {
             passedAttempts: r.passedAttempts ?? 0,
             failedAttempts: r.failedAttempts ?? 0,
             mergedCount: 1,
+            mergedIds: [r.id],
           });
         } else {
           existing.totalAttempts = (existing.totalAttempts ?? 0) + (r.totalAttempts ?? 0);
           existing.passedAttempts = (existing.passedAttempts ?? 0) + (r.passedAttempts ?? 0);
           existing.failedAttempts = (existing.failedAttempts ?? 0) + (r.failedAttempts ?? 0);
           existing.mergedCount += 1;
+          existing.mergedIds.push(r.id);
         }
       }
       list = Array.from(map.values());
@@ -411,6 +447,127 @@ export function DashboardPage() {
   const runStartIdx = (currentRunPage - 1) * runsPageSize;
   const visibleRuns = processedRuns.slice(runStartIdx, runStartIdx + runsPageSize);
 
+  const exportReportJson = async () => {
+    let allDetails: RunDetails | null = selectedRunId === 'all' && runDetails ? runDetails : null;
+    if (!allDetails && totalRunsCount > 0) {
+      try {
+        allDetails = await api<RunDetails>('/api/runs/all');
+      } catch {
+        allDetails = null;
+      }
+    }
+    downloadJson({
+      repository: repo,
+      branch: activeBranch,
+      commitSha: activeCommitSha || null,
+      exportedAt: new Date().toISOString(),
+      summary: {
+        healthScore: summary.healthScore,
+        activeFlakes: summary.activeFlakes,
+        totalRuns: totalRunsCount,
+        totalAttempts: summary.totalAttempts ?? 0,
+        classifiedTests: summary.classifiedTests ?? 0,
+        cleanTests: summary.cleanTests ?? 0,
+        wasteSeconds: summary.wasteSeconds,
+        wasteUsd: summary.wasteUsd,
+        runnerCostPerMinute: summary.runnerCostPerMinute ?? 0.008,
+      },
+      flakes,
+      recentRuns: processedRuns,
+      attempts: allDetails?.attempts ?? [],
+    });
+  };
+
+  const exportReportCsv = async () => {
+    let allDetails: RunDetails | null = selectedRunId === 'all' && runDetails ? runDetails : null;
+    if (!allDetails && totalRunsCount > 0) {
+      try {
+        allDetails = await api<RunDetails>('/api/runs/all');
+      } catch {
+        allDetails = null;
+      }
+    }
+    const attempts = allDetails?.attempts ?? [];
+    if (attempts.length > 0) {
+      const flakeMap = new Map(flakes.map((f) => [f.testId, f]));
+      downloadCsvRows(
+        [
+          'repository',
+          'branch',
+          'commitSha',
+          'runId',
+          'testId',
+          'testName',
+          'suiteName',
+          'filePath',
+          'status',
+          'category',
+          'confidence',
+          'durationMs',
+          'attemptNumber',
+          'failureSignature',
+          'createdAt',
+        ],
+        attempts.map((a) => {
+          const flk = flakeMap.get(a.testId);
+          const category = a.classification?.category ?? flk?.category ?? (a.status === 'PASSED' ? 'CLEAN' : 'UNCLASSIFIED');
+          const confidence = a.classification?.confidence ?? flk?.confidence ?? (a.status === 'PASSED' ? 100 : 0);
+          return [
+            repo,
+            activeBranch,
+            activeCommitSha || '',
+            a.runId ?? allDetails?.run.id ?? '',
+            a.testId,
+            a.testName,
+            a.suiteName,
+            a.filePath,
+            a.status,
+            category,
+            confidence,
+            a.durationMs,
+            a.attemptNumber,
+            a.failureSignature ?? '',
+            typeof a.createdAt === 'string' ? a.createdAt : new Date(a.createdAt).toISOString(),
+          ];
+        }),
+      );
+      return;
+    }
+
+    if (filtered.length > 0) {
+      downloadCsvRows(
+        ['repository', 'branch', 'commitSha', 'testId', 'testName', 'suiteName', 'filePath', 'category', 'confidence', 'runId'],
+        filtered.map((item) => [
+          repo,
+          activeBranch,
+          activeCommitSha || '',
+          item.testId,
+          item.testName,
+          item.suiteName,
+          item.filePath,
+          item.category,
+          item.confidence,
+          item.runId,
+        ]),
+      );
+      return;
+    }
+
+    downloadCsvRows(
+      ['repository', 'branch', 'commitSha', 'runId', 'totalAttempts', 'passedAttempts', 'failedAttempts', 'createdAt'],
+      processedRuns.map((r) => [
+        repo,
+        r.branch ?? activeBranch,
+        r.commitSha || activeCommitSha || '',
+        r.id,
+        r.totalAttempts ?? 0,
+        r.passedAttempts ?? 0,
+        r.failedAttempts ?? 0,
+        typeof r.createdAt === 'string' ? r.createdAt : new Date(r.createdAt).toISOString(),
+      ]),
+    );
+  };
+
   const renderRunsTable = () => (
     <div>
       <div style={{ overflowX: 'auto' }}>
@@ -487,23 +644,45 @@ export function DashboardPage() {
                     {new Date(run.createdAt).toLocaleString(locale === 'tr' ? 'tr-TR' : 'en-US')}
                   </td>
                   <td style={{ textAlign: 'right' }}>
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        padding: '3px 9px',
-                        borderRadius: '999px',
-                        fontSize: '10.5px',
-                        fontWeight: 700,
-                        fontFamily: 'var(--font-mono)',
-                        background: run.failedAttempts ? 'rgba(244, 63, 94, 0.14)' : 'rgba(16, 185, 129, 0.14)',
-                        color: run.failedAttempts ? 'var(--red)' : 'var(--mint)',
-                        border: run.failedAttempts ? '1px solid rgba(244, 63, 94, 0.35)' : '1px solid rgba(16, 185, 129, 0.35)',
-                      }}
-                    >
-                      {run.failedAttempts ? copy.statusFailed : copy.statusPassed}
-                    </span>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '3px 9px',
+                          borderRadius: '999px',
+                          fontSize: '10.5px',
+                          fontWeight: 700,
+                          fontFamily: 'var(--font-mono)',
+                          background: run.failedAttempts ? 'rgba(244, 63, 94, 0.14)' : 'rgba(16, 185, 129, 0.14)',
+                          color: run.failedAttempts ? 'var(--red)' : 'var(--mint)',
+                          border: run.failedAttempts ? '1px solid rgba(244, 63, 94, 0.35)' : '1px solid rgba(16, 185, 129, 0.35)',
+                        }}
+                      >
+                        {run.failedAttempts ? copy.statusFailed : copy.statusPassed}
+                      </span>
+                      <button
+                        type="button"
+                        className="button button-ghost"
+                        title={copy.deleteRun}
+                        aria-label={copy.deleteRun}
+                        disabled={Boolean(deletingRunId)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void deleteRunHistory(run.mergedIds && run.mergedIds.length > 1 ? run.mergedIds : run.id);
+                        }}
+                        style={{
+                          minHeight: '24px',
+                          padding: '2px 7px',
+                          fontSize: '11px',
+                          color: 'var(--red)',
+                          borderColor: 'rgba(244, 63, 94, 0.3)',
+                        }}
+                      >
+                        {deletingRunId === run.id ? '…' : '✕'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -630,7 +809,7 @@ export function DashboardPage() {
                 className="icon-button"
                 aria-label={copy.exportJson}
                 title={copy.exportJson}
-                onClick={() => downloadJson(flakes)}
+                onClick={() => void exportReportJson()}
               >
                 ↓ JSON
               </button>
@@ -853,7 +1032,7 @@ export function DashboardPage() {
                     <button
                       type="button"
                       className="button button-ghost full"
-                      onClick={() => downloadCsv(filtered)}
+                      onClick={() => void exportReportCsv()}
                     >
                       <span>{copy.exportCsv}</span>
                       <span>↓</span>
@@ -904,14 +1083,27 @@ export function DashboardPage() {
                           {copy.viewAllFlakes}
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          className="button button-ghost"
-                          style={{ minHeight: '34px', padding: '6px 12px' }}
-                          onClick={() => setActiveSection('history')}
-                        >
-                          {copy.viewFullHistory}
-                        </button>
+                        <>
+                          {totalRunsCount > 0 && (
+                            <button
+                              type="button"
+                              className="button button-danger"
+                              style={{ minHeight: '34px', padding: '6px 12px' }}
+                              disabled={Boolean(deletingRunId)}
+                              onClick={() => void deleteRunHistory('all')}
+                            >
+                              {deletingRunId === 'all' ? copy.deletingRun : `🗑 ${copy.clearHistory}`}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="button button-ghost"
+                            style={{ minHeight: '34px', padding: '6px 12px' }}
+                            onClick={() => setActiveSection('history')}
+                          >
+                            {copy.viewFullHistory}
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
@@ -1033,6 +1225,16 @@ export function DashboardPage() {
                   >
                     {copy.viewAllCombined} ({summary.totalAttempts ?? 0}) ⧉
                   </button>
+                  {totalRunsCount > 0 && (
+                    <button
+                      type="button"
+                      className="button button-danger"
+                      disabled={Boolean(deletingRunId)}
+                      onClick={() => void deleteRunHistory('all')}
+                    >
+                      {deletingRunId === 'all' ? copy.deletingRun : `🗑 ${copy.clearHistory}`}
+                    </button>
+                  )}
                 </div>
               </div>
               {renderRunsTable()}
@@ -1055,7 +1257,7 @@ export function DashboardPage() {
                   setSelected(flake);
                   void loadTimeline(flake.testId);
                 }}
-                onExport={() => downloadCsv(filtered)}
+                onExport={() => void exportReportCsv()}
               />
               <EvidenceCard
                 selected={selected}
@@ -1153,11 +1355,11 @@ export function DashboardPage() {
                       <span>{copy.playwrightSkipList}</span>
                       <span>⧉</span>
                     </button>
-                    <button type="button" onClick={() => downloadJson(flakes)}>
+                    <button type="button" onClick={() => void exportReportJson()}>
                       <span>{copy.exportJson}</span>
                       <span>↓</span>
                     </button>
-                    <button type="button" onClick={() => downloadCsv(filtered)}>
+                    <button type="button" onClick={() => void exportReportCsv()}>
                       <span>{copy.exportCsv}</span>
                       <span>↓</span>
                     </button>
@@ -1579,6 +1781,8 @@ export function DashboardPage() {
           locale={locale}
           defaultBranch={activeBranch}
           defaultCommitSha={activeCommitSha}
+          deletingRunId={deletingRunId}
+          onDeleteRun={deleteRunHistory}
           onClose={() => {
             setSelectedRunId(null);
             setRunDetails(null);

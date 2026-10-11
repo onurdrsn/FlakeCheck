@@ -52,6 +52,7 @@ export type TimelineItem = {
 
 export type RunDetailAttempt = {
   id: string;
+  runId?: string;
   testId: string;
   attemptNumber: number;
   status: string;
@@ -79,6 +80,7 @@ export type RunDetails = {
     envFingerprint: string;
     createdAt: string | Date;
   };
+  runs?: SummaryRun[];
   attempts: RunDetailAttempt[];
 };
 

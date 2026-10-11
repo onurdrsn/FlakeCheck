@@ -8,8 +8,11 @@ export function RunDetailsModal({
   loading,
   error,
   labels,
+  locale,
   defaultBranch,
   defaultCommitSha,
+  deletingRunId,
+  onDeleteRun,
   onClose,
 }: {
   runId: string;
@@ -20,6 +23,8 @@ export function RunDetailsModal({
   locale: Locale;
   defaultBranch?: string;
   defaultCommitSha?: string;
+  deletingRunId?: string | null;
+  onDeleteRun?: (target: 'all' | string | string[]) => Promise<void>;
   onClose: () => void;
 }) {
   const [selectedFile, setSelectedFile] = useState<string>('ALL');
@@ -66,13 +71,32 @@ export function RunDetailsModal({
           ×
         </button>
 
-        <span className="eyebrow">{labels.runDetailsTitle}</span>
-        <h2 style={{ wordBreak: 'break-all', fontSize: '1.35rem', margin: '0.4rem 0' }}>
-          {runId === 'all' ? labels.combinedRunsTitle : runId}
-        </h2>
-        <p style={{ color: 'var(--text-muted, #8892b0)', fontSize: '0.9rem', marginBottom: '1.2rem' }}>
-          {labels.runDetailsSubtitle}
-        </p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap', paddingRight: '2.2rem', marginBottom: '1rem' }}>
+          <div>
+            <span className="eyebrow">{labels.runDetailsTitle}</span>
+            <h2 style={{ wordBreak: 'break-all', fontSize: '1.35rem', margin: '0.4rem 0' }}>
+              {runId === 'all' ? labels.combinedRunsTitle : runId}
+            </h2>
+            <p style={{ color: 'var(--text-muted, #8892b0)', fontSize: '0.9rem', margin: 0 }}>
+              {labels.runDetailsSubtitle}
+            </p>
+          </div>
+          {onDeleteRun && details && (
+            <button
+              type="button"
+              className="button button-danger"
+              disabled={Boolean(deletingRunId)}
+              onClick={() => void onDeleteRun(runId === 'all' ? 'all' : runId)}
+              style={{ minHeight: '34px', padding: '0.4rem 0.85rem', fontSize: '0.82rem' }}
+            >
+              {deletingRunId === (runId === 'all' ? 'all' : runId)
+                ? labels.deletingRun
+                : runId === 'all'
+                  ? `🗑 ${labels.clearHistory}`
+                  : `🗑 ${labels.deleteRun}`}
+            </button>
+          )}
+        </div>
 
         {loading && (
           <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted, #8892b0)' }}>
@@ -133,6 +157,65 @@ export function RunDetailsModal({
                 </strong>
               </div>
             </div>
+
+            {runId === 'all' && details.runs && details.runs.length > 0 && (
+              <div style={{ marginBottom: '1.25rem' }}>
+                <small style={{ color: 'var(--text-muted, #8892b0)', display: 'block', marginBottom: '0.45rem' }}>
+                  {labels.includedRuns} ({details.runs.length}):
+                </small>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.35rem',
+                    maxHeight: '165px',
+                    overflowY: 'auto',
+                    background: '#0d1117',
+                    border: '1px solid var(--border-color, #232936)',
+                    borderRadius: '6px',
+                    padding: '0.5rem',
+                  }}
+                >
+                  {details.runs.map((r) => (
+                    <div
+                      key={r.id}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '0.35rem 0.6rem',
+                        borderRadius: '4px',
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        fontSize: '0.8rem',
+                        gap: '0.5rem',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+                        <code style={{ color: '#38bdf8', fontWeight: 600 }}>{r.id.slice(0, 8)}…</code>
+                        <span style={{ color: 'var(--text-muted, #8892b0)' }}>
+                          {r.totalAttempts ?? 0} {labels.attempts.toLowerCase()}
+                        </span>
+                        <span style={{ color: 'var(--text-muted, #8892b0)', fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                          {new Date(r.createdAt).toLocaleString(locale === 'tr' ? 'tr-TR' : 'en-US')}
+                        </span>
+                      </div>
+                      {onDeleteRun && (
+                        <button
+                          type="button"
+                          className="button button-danger"
+                          disabled={Boolean(deletingRunId)}
+                          onClick={() => void onDeleteRun(r.id)}
+                          style={{ minHeight: '24px', padding: '0.15rem 0.55rem', fontSize: '0.73rem' }}
+                        >
+                          {deletingRunId === r.id ? labels.deletingRun : `✕ ${labels.deleteRun}`}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {fileGroups.length > 1 && (
               <div style={{ marginBottom: '1.25rem' }}>

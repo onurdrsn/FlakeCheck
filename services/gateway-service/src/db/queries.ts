@@ -42,6 +42,7 @@ export async function getRunDetails(db: Db, repo: string, runId: string) {
     const runIds = repoRuns.map((r) => r.id);
     const attempts = await db.select({
       id: testAttempts.id,
+      runId: testAttempts.runId,
       testId: testAttempts.testId,
       attemptNumber: testAttempts.attemptNumber,
       status: testAttempts.status,
@@ -80,6 +81,14 @@ export async function getRunDetails(db: Db, repo: string, runId: string) {
         ...latestRun,
         id: 'all',
       },
+      runs: repoRuns.map((r) => ({
+        id: r.id,
+        branch: r.branch,
+        commitSha: r.commitSha,
+        createdAt: r.createdAt,
+        totalAttempts: attempts.filter((a) => a.runId === r.id).length,
+        failedAttempts: attempts.filter((a) => a.runId === r.id && a.status === 'FAILED').length,
+      })),
       attempts: attempts.map((a) => ({
         ...a,
         classification: classificationMap.get(a.testId) ?? null,
@@ -92,6 +101,7 @@ export async function getRunDetails(db: Db, repo: string, runId: string) {
 
   const attempts = await db.select({
     id: testAttempts.id,
+    runId: testAttempts.runId,
     testId: testAttempts.testId,
     attemptNumber: testAttempts.attemptNumber,
     status: testAttempts.status,
@@ -128,3 +138,31 @@ export async function getRunDetails(db: Db, repo: string, runId: string) {
     })),
   };
 }
+
+export async function deleteRuns(db: Db, repo: string, targetRunIds: 'all' | string[]) {
+  const repoRuns = await db
+    .select({ id: runs.id })
+    .from(runs)
+    .where(
+      targetRunIds === 'all'
+        ? eq(runs.repo, repo)
+        : and(eq(runs.repo, repo), inArray(runs.id, targetRunIds)),
+    );
+
+  if (!repoRuns.length) {
+    return { deletedRuns: 0 };
+  }
+
+  const ids = repoRuns.map((r) => r.id);
+  await db.delete(classifications).where(inArray(classifications.runId, ids));
+  await db.delete(testAttempts).where(inArray(testAttempts.runId, ids));
+  await db.delete(runs).where(inArray(runs.id, ids));
+
+  const remainingRuns = await db.select({ id: runs.id }).from(runs).where(eq(runs.repo, repo)).limit(1);
+  if (!remainingRuns.length) {
+    await db.delete(tests).where(and(eq(tests.repo, repo), eq(tests.isQuarantined, false)));
+  }
+
+  return { deletedRuns: ids.length, remainingRuns: remainingRuns.length };
+}
+
