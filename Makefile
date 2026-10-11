@@ -116,13 +116,13 @@ db-seed: ## Seed database with initial synthetic test data
 	$(PNPM) run db:seed
 
 flakecheck-update: ## Bump patch version of @onurdrsn/flakecheck CLI package
-	$(PNPM) --filter @onurdrsn/flakecheck exec npm version patch
+	npm --prefix packages/cli version patch
 
 flakecheck-build: ## Build @onurdrsn/flakecheck CLI package
 	$(PNPM) --filter @onurdrsn/flakecheck run build
 
 flakecheck-publish: ## Publish @onurdrsn/flakecheck CLI package to npm registry
-	$(PNPM) --filter @onurdrsn/flakecheck publish --access public
+	$(PNPM) --filter @onurdrsn/flakecheck publish --access public --no-git-checks
 
 clean: ## Clean build artifacts, dist folders, and web bundles
 	@set -e; \
