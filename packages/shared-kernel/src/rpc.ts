@@ -13,6 +13,7 @@ export interface IngestionRPC {
 
 export interface AnalysisRunInfo {
   id: string;
+  branch?: string;
   commitSha: string;
   createdAt: string | Date;
   totalAttempts?: number;
@@ -37,6 +38,8 @@ export interface AnalysisSummary {
   wasteSeconds: number;
   wasteUsd: number;
   activeFlakes: number;
+  defaultBranch?: string | null;
+  lastBranch?: string | null;
   totalRuns?: number;
   totalAttempts?: number;
   classifiedTests?: number;

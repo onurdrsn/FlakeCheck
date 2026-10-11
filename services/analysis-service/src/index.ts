@@ -35,6 +35,7 @@ export class AnalysisEntrypoint extends WorkerEntrypoint<Env> implements Analysi
       breakdown,
       latestRun: snapshot.runs[0] ? {
         id: snapshot.runs[0].id,
+        branch: snapshot.runs[0].branch,
         commitSha: snapshot.runs[0].commitSha,
         createdAt: snapshot.runs[0].createdAt,
       } : null,
@@ -54,6 +55,7 @@ export class AnalysisEntrypoint extends WorkerEntrypoint<Env> implements Analysi
       const runAttempts = snapshot.attempts.filter((a) => a.runId === run.id);
       return {
         id: run.id,
+        branch: run.branch,
         commitSha: run.commitSha,
         createdAt: run.createdAt,
         totalAttempts: runAttempts.length,
@@ -71,6 +73,7 @@ export class AnalysisEntrypoint extends WorkerEntrypoint<Env> implements Analysi
       classifiedTests: classifications.length,
       cleanTests,
       lastRunId: snapshot.runs[0]?.id ?? null,
+      lastBranch: snapshot.runs[0]?.branch ?? null,
       lastCommitSha: snapshot.runs[0]?.commitSha ?? null,
       lastAnalyzedAt: snapshot.runs[0]?.createdAt ?? null,
       recentRuns,

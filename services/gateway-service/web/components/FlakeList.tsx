@@ -6,6 +6,7 @@ export function FlakeList({
   selected,
   query,
   labels,
+  activeBranch,
   onQueryChange,
   onSelect,
   onExport,
@@ -14,6 +15,7 @@ export function FlakeList({
   selected: Flake | null;
   query: string;
   labels: Translations;
+  activeBranch?: string;
   onQueryChange: (value: string) => void;
   onSelect: (flake: Flake) => void;
   onExport: () => void;
@@ -38,8 +40,7 @@ export function FlakeList({
         />
         <select>
           <option>{labels.allBranches}</option>
-          <option>main</option>
-          <option>release</option>
+          {activeBranch && <option value={activeBranch}>{activeBranch}</option>}
         </select>
         <select>
           <option>{labels.allStatuses}</option>

@@ -11,6 +11,7 @@ export type Flake = {
 
 export type SummaryRun = {
   id: string;
+  branch?: string;
   commitSha: string;
   createdAt: string | Date;
   totalAttempts?: number;
@@ -23,6 +24,8 @@ export type Summary = {
   wasteSeconds: number;
   wasteUsd: number;
   activeFlakes: number;
+  defaultBranch?: string | null;
+  lastBranch?: string | null;
   runnerCostPerMinute?: number;
   windowLabel?: string;
   totalRuns?: number;

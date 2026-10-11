@@ -211,8 +211,12 @@ function readGitMetadataFromFs(startDir = cwd()): { commitSha?: string; branch?:
   }
 }
 
-function detectGitContext(): { commitSha?: string; branch?: string } {
-  return readGitMetadataFromFs();
+function detectGitContext(files?: string[]): { commitSha?: string; branch?: string } {
+  if (files && files.length > 0 && files[0]) {
+    const fromFileDir = readGitMetadataFromFs(dirname(resolve(cwd(), files[0])));
+    if (fromFileDir.commitSha || fromFileDir.branch) return fromFileDir;
+  }
+  return readGitMetadataFromFs(cwd());
 }
 
 program.command('ingest <files...>').description('stream one or more test reports to the Gateway under a single run')
@@ -225,9 +229,9 @@ program.command('ingest <files...>').description('stream one or more test report
     const files = [...new Set(inputs.flatMap((input) => filesFor(input)))];
     if (!files.length) throw new CliError(1, `No files matched ${inputs.join(', ')}`);
 
-    const git = detectGitContext();
+    const git = detectGitContext(files);
     const commitSha = options.commit || git.commitSha;
-    const branch = options.branch || git.branch || 'local';
+    const branch = options.branch || git.branch || '';
     const sharedRunId = options.runId || commitSha || `batch-${Date.now()}`;
 
     let totalIngestedAttempts = 0;
@@ -241,10 +245,10 @@ program.command('ingest <files...>').description('stream one or more test report
           'X-FlakeCheck-Format': options.format,
           'Content-Type': 'application/octet-stream',
           'X-FlakeCheck-Source-File-Path': posixPath(file),
-          'X-FlakeCheck-Branch': branch,
           'X-FlakeCheck-Ci-Workflow-Name': 'flakecheck-cli',
           'X-FlakeCheck-Run-Id': sharedRunId,
         };
+        if (branch) headers['X-FlakeCheck-Branch'] = branch;
         if (commitSha) headers['X-FlakeCheck-Commit-Sha'] = commitSha;
 
         const response = await api.request<{ runId: string; ingestedAttempts: number }>('/api/ingest', {

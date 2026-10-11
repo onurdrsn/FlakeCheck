@@ -8,6 +8,8 @@ export function RunDetailsModal({
   loading,
   error,
   labels,
+  defaultBranch,
+  defaultCommitSha,
   onClose,
 }: {
   runId: string;
@@ -16,6 +18,8 @@ export function RunDetailsModal({
   error: string | null;
   labels: Translations;
   locale: Locale;
+  defaultBranch?: string;
+  defaultCommitSha?: string;
   onClose: () => void;
 }) {
   const [selectedFile, setSelectedFile] = useState<string>('ALL');
@@ -98,11 +102,21 @@ export function RunDetailsModal({
             >
               <div>
                 <small style={{ color: 'var(--text-muted, #8892b0)', display: 'block' }}>{labels.commit}</small>
-                <code style={{ color: '#38bdf8' }}>{details.run.commitSha ? details.run.commitSha.slice(0, 7) : '—'}</code>
+                <code style={{ color: '#38bdf8' }}>
+                  {(() => {
+                    const raw = details.run.commitSha;
+                    const valid = raw && !/^[0-9a-f]{64}$/i.test(raw) && raw !== 'local' && raw !== 'local-report' ? raw : defaultCommitSha;
+                    return valid ? valid.slice(0, 7) : '—';
+                  })()}
+                </code>
               </div>
               <div>
                 <small style={{ color: 'var(--text-muted, #8892b0)', display: 'block' }}>{labels.branch}</small>
-                <strong>{details.run.branch || 'main'}</strong>
+                <strong>
+                  {details.run.branch && details.run.branch !== 'local' && details.run.branch !== 'local-report'
+                    ? details.run.branch
+                    : (defaultBranch || '—')}
+                </strong>
               </div>
               <div>
                 <small style={{ color: 'var(--text-muted, #8892b0)', display: 'block' }}>{labels.testFiles}</small>

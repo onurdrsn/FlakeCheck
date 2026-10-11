@@ -44,9 +44,63 @@ function extractSessionToken(context: { req: { header(name: string): string | un
   return undefined;
 }
 
+function isSyntheticCommitSha(sha?: string | null): boolean {
+  if (!sha) return true;
+  const trimmed = sha.trim();
+  if (!trimmed || trimmed === 'local' || trimmed === 'local-report' || trimmed.startsWith('batch-')) return true;
+  // 64-hex-char strings are SHA-256 file hashes rather than 40-hex-char Git commit SHAs
+  return /^[0-9a-f]{64}$/i.test(trimmed);
+}
+
+function isSyntheticBranch(branch?: string | null): boolean {
+  if (!branch) return true;
+  const trimmed = branch.trim();
+  return !trimmed || trimmed === 'local' || trimmed === 'local-report';
+}
+
+async function resolveGitHubRepoContext(
+  repo: string,
+  databaseUrl?: string,
+  githubAccessToken?: string,
+): Promise<{ defaultBranch: string | null; latestCommitSha: string | null }> {
+  if (!repo || !repo.includes('/') || !databaseUrl || databaseUrl === 'https://example.invalid') {
+    return { defaultBranch: null, latestCommitSha: null };
+  }
+  const [owner, name] = repo.split('/');
+  if (!owner || !name) return { defaultBranch: null, latestCommitSha: null };
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'FlakeCheck',
+    ...(githubAccessToken ? { Authorization: `Bearer ${githubAccessToken}` } : {}),
+  };
+  try {
+    const [repoRes, commitsRes] = await Promise.all([
+      fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, { headers }),
+      fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/commits?per_page=1`, { headers }),
+    ]);
+    let defaultBranch: string | null = null;
+    let latestCommitSha: string | null = null;
+    if (repoRes.ok) {
+      const repoJson = (await repoRes.json()) as { default_branch?: string };
+      if (typeof repoJson?.default_branch === 'string' && repoJson.default_branch.trim()) {
+        defaultBranch = repoJson.default_branch.trim();
+      }
+    }
+    if (commitsRes.ok) {
+      const commitsJson = (await commitsRes.json()) as Array<{ sha?: string }>;
+      if (Array.isArray(commitsJson) && typeof commitsJson[0]?.sha === 'string') {
+        latestCommitSha = commitsJson[0].sha;
+      }
+    }
+    return { defaultBranch, latestCommitSha };
+  } catch {
+    return { defaultBranch: null, latestCommitSha: null };
+  }
+}
+
 export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
   async fetch(request: Request): Promise<Response> {
-    const app = new Hono<{ Bindings: Env; Variables: { repo: string } }>();
+    const app = new Hono<{ Bindings: Env; Variables: { repo: string; githubAccessToken?: string } }>();
     const sessionCookieFor = (token: string) => sessionCookie(token, undefined, this.env.SESSION_COOKIE_DOMAIN);
     const expiredSessionCookieFor = () => expiredSessionCookie(this.env.SESSION_COOKIE_DOMAIN);
     const dashboardUrl = (path: string) => {
@@ -303,6 +357,7 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
           await createDatabase(context.env.DATABASE_URL).insert(repositoryAccess).values({ id: crypto.randomUUID(), userId: session.userId, repo: auth.repo }).onConflictDoNothing();
         }
         context.set('repo', auth.repo);
+        if (githubAccessToken) context.set('githubAccessToken', githubAccessToken);
         await next();
       } catch (error) {
         console.warn('Repository authentication rejected', error instanceof Error ? error.message : 'unknown reason');
@@ -317,6 +372,11 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       context.req.raw.headers.forEach((value, key) => {
         if (key.startsWith('x-flakecheck-')) metadata[key.slice('x-flakecheck-'.length).replaceAll('-', '_')] = value;
       });
+      if (isSyntheticBranch(metadata.branch) || isSyntheticCommitSha(metadata.commit_sha)) {
+        const gh = await resolveGitHubRepoContext(repo, context.env.DATABASE_URL, context.get('githubAccessToken'));
+        if (isSyntheticBranch(metadata.branch) && gh.defaultBranch) metadata.branch = gh.defaultBranch;
+        if (isSyntheticCommitSha(metadata.commit_sha) && gh.latestCommitSha) metadata.commit_sha = gh.latestCommitSha;
+      }
       return context.json(await this.env.INGESTION_SERVICE.ingestStream(format, metadata, context.req.raw.body), 201);
     });
     app.post('/api/analyze', async (context) => {
@@ -332,7 +392,28 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       }
       return context.json(result);
     });
-    app.get('/api/summary', async (context) => context.json(await this.env.ANALYSIS_SERVICE.calculateSummary(context.get('repo'))));
+    app.get('/api/summary', async (context) => {
+      const repo = context.get('repo');
+      const [summary, gh] = await Promise.all([
+        this.env.ANALYSIS_SERVICE.calculateSummary(repo),
+        resolveGitHubRepoContext(repo, context.env.DATABASE_URL, context.get('githubAccessToken')),
+      ]);
+      const resolvedBranch = gh.defaultBranch || (!isSyntheticBranch(summary.lastBranch) ? summary.lastBranch : null);
+      const resolvedCommitSha =
+        (!isSyntheticCommitSha(summary.lastCommitSha) ? summary.lastCommitSha : null) || gh.latestCommitSha;
+      const recentRuns = summary.recentRuns?.map((run) => ({
+        ...run,
+        branch: !isSyntheticBranch(run.branch) ? run.branch : (resolvedBranch ?? run.branch),
+        commitSha: !isSyntheticCommitSha(run.commitSha) ? run.commitSha : (resolvedCommitSha ?? ''),
+      }));
+      return context.json({
+        ...summary,
+        defaultBranch: resolvedBranch ?? null,
+        lastBranch: resolvedBranch ?? summary.lastBranch ?? null,
+        lastCommitSha: resolvedCommitSha ?? null,
+        ...(recentRuns ? { recentRuns } : {}),
+      });
+    });
     app.get('/api/flakes', async (context) => {
       const page = Math.max(1, Number(context.req.query('page') ?? 1));
       const pageSize = Math.min(100, Math.max(1, Number(context.req.query('pageSize') ?? 25)));
@@ -340,8 +421,17 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
     });
     app.get('/api/tests/:id', async (context) => context.json({ testId: context.req.param('id'), timeline: await testTimeline(createDatabase(context.env.DATABASE_URL), context.get('repo'), context.req.param('id')) }));
     app.get('/api/runs/:id', async (context) => {
-      const details = await getRunDetails(createDatabase(context.env.DATABASE_URL), context.get('repo'), context.req.param('id'));
+      const repo = context.get('repo');
+      const details = await getRunDetails(createDatabase(context.env.DATABASE_URL), repo, context.req.param('id'));
       if (!details) return context.json({ error: 'Run not found' }, 404);
+      if (isSyntheticBranch(details.run.branch) || isSyntheticCommitSha(details.run.commitSha)) {
+        const gh = await resolveGitHubRepoContext(repo, context.env.DATABASE_URL, context.get('githubAccessToken'));
+        details.run = {
+          ...details.run,
+          branch: !isSyntheticBranch(details.run.branch) ? details.run.branch : (gh.defaultBranch ?? details.run.branch),
+          commitSha: !isSyntheticCommitSha(details.run.commitSha) ? details.run.commitSha : (gh.latestCommitSha ?? ''),
+        };
+      }
       return context.json(details);
     });
     app.post('/api/quarantine', async (context) => {

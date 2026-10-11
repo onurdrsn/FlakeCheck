@@ -73,11 +73,78 @@ export function DashboardPage() {
   const [loadingRunDetails, setLoadingRunDetails] = useState(false);
   const [runDetailsError, setRunDetailsError] = useState<string | null>(null);
   const [runsPage, setRunsPage] = useState(1);
+  const [githubRepoMeta, setGithubRepoMeta] = useState<{ defaultBranch: string | null; latestCommitSha: string | null }>({
+    defaultBranch: null,
+    latestCommitSha: null,
+  });
   const runsPageSize = 6;
 
   const copy = translations[locale];
   const { api, connect, status, setStatus } = useAuth(repo, token);
   const { summary, flakes, selected, setSelected, setSummary, setFlakes, timeline, load, loadTimeline } = useFlakes(api);
+
+  const isSyntheticCommit = (sha?: string | null) => {
+    if (!sha) return true;
+    const t = sha.trim();
+    if (!t || t === 'local' || t === 'local-report' || t.startsWith('batch-')) return true;
+    return /^[0-9a-f]{64}$/i.test(t);
+  };
+
+  const isSyntheticBranch = (br?: string | null) => {
+    if (!br) return true;
+    const t = br.trim();
+    return !t || t === 'local' || t === 'local-report';
+  };
+
+  useEffect(() => {
+    const target = connectedRepo.trim();
+    if (!target || !target.includes('/')) {
+      setGithubRepoMeta({ defaultBranch: null, latestCommitSha: null });
+      return;
+    }
+    const [owner, name] = target.split('/');
+    if (!owner || !name) return;
+    let cancelled = false;
+    Promise.all([
+      fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`),
+      fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/commits?per_page=1`),
+    ])
+      .then(async ([repoRes, commitsRes]) => {
+        if (cancelled) return;
+        let defaultBranch: string | null = null;
+        let latestCommitSha: string | null = null;
+        if (repoRes.ok) {
+          const data = (await repoRes.json()) as { default_branch?: string };
+          if (typeof data?.default_branch === 'string' && data.default_branch.trim()) {
+            defaultBranch = data.default_branch.trim();
+          }
+        }
+        if (commitsRes.ok) {
+          const commits = (await commitsRes.json()) as Array<{ sha?: string }>;
+          if (Array.isArray(commits) && typeof commits[0]?.sha === 'string') {
+            latestCommitSha = commits[0].sha;
+          }
+        }
+        if (!cancelled) {
+          setGithubRepoMeta({ defaultBranch, latestCommitSha });
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [connectedRepo]);
+
+  const activeBranch =
+    summary?.defaultBranch ||
+    githubRepoMeta.defaultBranch ||
+    (!isSyntheticBranch(summary?.lastBranch) ? summary?.lastBranch : null) ||
+    'master';
+
+  const activeCommitSha =
+    (!isSyntheticCommit(summary?.lastCommitSha) ? summary?.lastCommitSha : null) ||
+    githubRepoMeta.latestCommitSha ||
+    '';
 
   const openRunDetails = async (runId: string) => {
     setSelectedRunId(runId);
@@ -162,7 +229,11 @@ export function DashboardPage() {
 
   // Process runs (with optional grouping by commit SHA and outcome filtering)
   const processedRuns = useMemo(() => {
-    const rawRuns: SummaryRun[] = summary?.recentRuns ?? [];
+    const rawRuns: SummaryRun[] = (summary?.recentRuns ?? []).map((r) => ({
+      ...r,
+      branch: (!isSyntheticBranch(r.branch) && r.branch) ? r.branch : activeBranch,
+      commitSha: !isSyntheticCommit(r.commitSha) ? r.commitSha : activeCommitSha,
+    }));
     let list: Array<SummaryRun & { mergedCount?: number }> = rawRuns;
 
     if (groupRunsByCommit) {
@@ -198,7 +269,7 @@ export function DashboardPage() {
       if (runStatusFilter === 'clean') return (r.failedAttempts ?? 0) === 0;
       return true;
     });
-  }, [summary?.recentRuns, groupRunsByCommit, query, runStatusFilter]);
+  }, [summary?.recentRuns, groupRunsByCommit, query, runStatusFilter, activeBranch, activeCommitSha]);
 
   const toggleCategoryFilter = (cat: string) => {
     setSelectedCategories((prev) =>
@@ -537,7 +608,7 @@ export function DashboardPage() {
                     <circle cx="6" cy="18" r="3" />
                     <path d="M18 9a9 9 0 0 1-9 9" />
                   </svg>
-                  main
+                  {activeBranch}
                 </span>
               </div>
             </div>
@@ -642,7 +713,7 @@ export function DashboardPage() {
           <div className="meta-cell">
             <span className="meta-cell-label">{copy.metaTargetBranch}</span>
             <span className="meta-cell-value" style={{ fontFamily: 'var(--font-mono)' }}>
-              main {summary.lastCommitSha ? `· ${summary.lastCommitSha.slice(0, 7)}` : ''}
+              {activeBranch} {activeCommitSha ? `· ${activeCommitSha.slice(0, 7)}` : ''}
             </span>
           </div>
           <div className="meta-cell">
@@ -978,6 +1049,7 @@ export function DashboardPage() {
                 selected={selected}
                 query={query}
                 labels={copy}
+                activeBranch={activeBranch}
                 onQueryChange={setQuery}
                 onSelect={(flake) => {
                   setSelected(flake);
@@ -1491,6 +1563,8 @@ export function DashboardPage() {
           error={runDetailsError}
           labels={copy}
           locale={locale}
+          defaultBranch={activeBranch}
+          defaultCommitSha={activeCommitSha}
           onClose={() => {
             setSelectedRunId(null);
             setRunDetails(null);
