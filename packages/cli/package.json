@@ -1,6 +1,6 @@
 {
   "name": "@onurdrsn/flakecheck",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "type": "module",
   "description": "CLI for ingesting test reports and reviewing FlakeCheck results",
   "license": "MIT",
@@ -20,7 +20,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "socket.yml"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

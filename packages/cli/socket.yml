@@ -1,0 +1,6 @@
+version: 2
+issueRules:
+  networkAccess: false
+  filesystemAccess: false
+  envVars: false
+  shellAccess: true
