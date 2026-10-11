@@ -4,7 +4,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   publicDir: 'static',
-  build: { outDir: 'public', emptyOutDir: true },
+  esbuild: { target: 'es2022' },
+  build: { outDir: 'public', emptyOutDir: true, target: 'es2022' },
   server: {
     proxy: {
       '/api': {

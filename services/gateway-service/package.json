@@ -15,7 +15,7 @@
     "@flakecheck/shared-kernel": "workspace:*",
     "@neondatabase/serverless": "^0.10.4",
     "@vitejs/plugin-react": "^4.4.1",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "hono": "^4.7.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
