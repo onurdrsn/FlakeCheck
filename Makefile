@@ -124,8 +124,12 @@ flakecheck-build: ## Build @onurdrsn/flakecheck CLI package
 flakecheck-publish: ## Publish @onurdrsn/flakecheck CLI package to npm registry
 	$(PNPM) --filter @onurdrsn/flakecheck publish --access public --no-git-checks
 
-flakecheck-push: flakecheck-update ## Bump CLI patch version, commit, tag, and push release to GitHub
-	VER=$$(node -p "require('./packages/cli/package.json').version") && git add -A && git commit -m "chore(release): v$$VER" && git tag "v$$VER" && git push && git push origin "v$$VER"
+flakecheck-commit: flakecheck-update ## Bump CLI patch version, commit, tag, and push release to GitHub
+	VER=$$(node -p "require('./packages/cli/package.json').version") && git add -A && git commit -m "chore(release): v$$VER" && git tag "v$$VER"
+
+flakecheck-push: ## Git push
+	git push && git push origin "v$$VER"
+
 
 clean: ## Clean build artifacts, dist folders, and web bundles
 	@set -e; \
