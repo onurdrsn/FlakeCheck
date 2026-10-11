@@ -4,12 +4,12 @@ import { useAuth } from '../hooks/useAuth';
 import { useFlakes } from '../hooks/useFlakes';
 import { EvidenceCard } from '../components/EvidenceCard';
 import { FlakeList } from '../components/FlakeList';
-import { Navbar } from '../components/Navbar';
+import { Navbar, type DashboardSection } from '../components/Navbar';
 import { QuarantineModal } from '../components/QuarantineModal';
 import { RunDetailsModal } from '../components/RunDetailsModal';
 import { StatsCard } from '../components/StatsCard';
 import { WorkspaceConnector } from '../components/WorkspaceConnector';
-import type { Flake, RunDetails } from '../types';
+import type { Flake, RunDetails, SummaryRun } from '../types';
 import { apiUrl, authHeaders, friendlyResponseError, setSessionToken, userFacingMessage } from '../http';
 
 const WORKSPACE_REPOSITORY_KEY = 'flakecheck.workspace.repository';
@@ -48,6 +48,12 @@ function downloadCsv(data: Flake[]) {
 
 export function DashboardPage() {
   const [locale, setLocale] = useState<Locale>(() => getStoredLocale());
+  const [activeSection, setActiveSection] = useState<DashboardSection>('overview');
+  const [overviewSubTab, setOverviewSubTab] = useState<'issues' | 'runs'>('issues');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [runStatusFilter, setRunStatusFilter] = useState<'all' | 'failed' | 'clean'>('all');
+  const [groupRunsByCommit, setGroupRunsByCommit] = useState(false);
+
   const [repo, setRepo] = useState(() => window.localStorage.getItem(WORKSPACE_REPOSITORY_KEY) ?? '');
   const [connectedRepo, setConnectedRepo] = useState(() => window.localStorage.getItem(WORKSPACE_REPOSITORY_KEY) ?? '');
   const [isConnecting, setIsConnecting] = useState(false);
@@ -67,7 +73,7 @@ export function DashboardPage() {
   const [loadingRunDetails, setLoadingRunDetails] = useState(false);
   const [runDetailsError, setRunDetailsError] = useState<string | null>(null);
   const [runsPage, setRunsPage] = useState(1);
-  const runsPageSize = 5;
+  const runsPageSize = 6;
 
   const copy = translations[locale];
   const { api, connect, status, setStatus } = useAuth(repo, token);
@@ -138,13 +144,67 @@ export function DashboardPage() {
   }, [bootstrapping, pendingConnect, repo, connect, load, copy.connecting, copy.liveGatewayConnected, copy.connectPrompt]);
 
   useEffect(() => {
-    if (accountModal) void loadRepositoryTokenStatus();
-  }, [accountModal, repo]);
+    if (accountModal || activeSection === 'settings') void loadRepositoryTokenStatus();
+  }, [accountModal, activeSection, repo]);
 
-  const filtered = useMemo(
-    () => flakes.filter((flake) => `${flake.filePath} ${flake.testName} ${flake.category}`.toLowerCase().includes(query.toLowerCase())),
-    [flakes, query],
-  );
+  // If there are 0 flakes and runs exist, default the overview subtab to show issues or runs cleanly
+  const filtered = useMemo(() => {
+    return flakes.filter((flake) => {
+      const matchesQuery = `${flake.filePath} ${flake.testName} ${flake.category}`
+        .toLowerCase()
+        .includes(query.toLowerCase());
+      const matchesCategory =
+        selectedCategories.length === 0 ||
+        selectedCategories.some((cat) => flake.category.toUpperCase().includes(cat));
+      return matchesQuery && matchesCategory;
+    });
+  }, [flakes, query, selectedCategories]);
+
+  // Process runs (with optional grouping by commit SHA and outcome filtering)
+  const processedRuns = useMemo(() => {
+    const rawRuns: SummaryRun[] = summary?.recentRuns ?? [];
+    let list: Array<SummaryRun & { mergedCount?: number }> = rawRuns;
+
+    if (groupRunsByCommit) {
+      const map = new Map<string, SummaryRun & { mergedCount: number }>();
+      for (const r of rawRuns) {
+        const key = r.commitSha || r.id;
+        const existing = map.get(key);
+        if (!existing) {
+          map.set(key, {
+            ...r,
+            totalAttempts: r.totalAttempts ?? 0,
+            passedAttempts: r.passedAttempts ?? 0,
+            failedAttempts: r.failedAttempts ?? 0,
+            mergedCount: 1,
+          });
+        } else {
+          existing.totalAttempts = (existing.totalAttempts ?? 0) + (r.totalAttempts ?? 0);
+          existing.passedAttempts = (existing.passedAttempts ?? 0) + (r.passedAttempts ?? 0);
+          existing.failedAttempts = (existing.failedAttempts ?? 0) + (r.failedAttempts ?? 0);
+          existing.mergedCount += 1;
+        }
+      }
+      list = Array.from(map.values());
+    }
+
+    return list.filter((r) => {
+      const matchesSearch =
+        !query.trim() ||
+        r.id.toLowerCase().includes(query.toLowerCase()) ||
+        (r.commitSha ?? '').toLowerCase().includes(query.toLowerCase());
+      if (!matchesSearch) return false;
+      if (runStatusFilter === 'failed') return (r.failedAttempts ?? 0) > 0;
+      if (runStatusFilter === 'clean') return (r.failedAttempts ?? 0) === 0;
+      return true;
+    });
+  }, [summary?.recentRuns, groupRunsByCommit, query, runStatusFilter]);
+
+  const toggleCategoryFilter = (cat: string) => {
+    setSelectedCategories((prev) =>
+      prev.includes(cat) ? prev.filter((item) => item !== cat) : [...prev, cat],
+    );
+  };
 
   const connectWorkspace = async (nextRepo = repo, nextToken = token) => {
     const normalizedRepo = nextRepo.trim();
@@ -255,13 +315,13 @@ export function DashboardPage() {
     return (
       <div className="app-shell">
         <aside className="sidebar connector-sidebar">
-          <div className="brand">
+          <a className="brand" href="/">
             <span className="brand-mark">FC</span>
             <div>
               <strong>{copy.brandTitle}</strong>
               <small>{copy.brandTagline}</small>
             </div>
-          </div>
+          </a>
           <div className="side-footer">
             <span className="status-dot" /> {copy.gatewayOnline}
             <small>{status}</small>
@@ -274,6 +334,167 @@ export function DashboardPage() {
     );
   }
 
+  const totalRunsCount = summary.totalRuns ?? summary.recentRuns?.length ?? 0;
+  const totalRunPages = Math.max(1, Math.ceil(processedRuns.length / runsPageSize));
+  const currentRunPage = Math.min(runsPage, totalRunPages);
+  const runStartIdx = (currentRunPage - 1) * runsPageSize;
+  const visibleRuns = processedRuns.slice(runStartIdx, runStartIdx + runsPageSize);
+
+  const renderRunsTable = () => (
+    <div>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>{copy.runId}</th>
+              <th>{copy.commit}</th>
+              <th>{copy.attempts}</th>
+              <th>{copy.lastAnalyzed}</th>
+              <th style={{ textAlign: 'right' }}>{copy.status}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRuns.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--muted)' }}>
+                  {copy.noMatchingRuns}
+                </td>
+              </tr>
+            ) : (
+              visibleRuns.map((run) => (
+                <tr key={run.id} onClick={() => void openRunDetails(run.id)}>
+                  <td>
+                    <button
+                      type="button"
+                      className="text-link"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--blue)',
+                        fontWeight: 600,
+                        fontSize: '12.5px',
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void openRunDetails(run.id);
+                      }}
+                    >
+                      {run.id.slice(0, 8)}… ⧉
+                    </button>
+                    {run.mergedCount && run.mergedCount > 1 && (
+                      <span
+                        style={{
+                          marginLeft: '8px',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          background: 'rgba(56, 189, 248, 0.14)',
+                          color: 'var(--blue)',
+                          fontSize: '10.5px',
+                          fontFamily: 'var(--font-mono)',
+                        }}
+                      >
+                        {run.mergedCount} {copy.runsMerged}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    {run.commitSha ? run.commitSha.slice(0, 7) : '—'}
+                  </td>
+                  <td>
+                    <span style={{ color: 'var(--mint)', fontWeight: 600, fontSize: '12.5px' }}>
+                      {run.passedAttempts ?? run.totalAttempts ?? 0} {copy.passed.toLowerCase()}
+                    </span>
+                    {run.failedAttempts ? (
+                      <span style={{ color: 'var(--red)', marginLeft: '10px', fontWeight: 700, fontSize: '12.5px' }}>
+                        {run.failedAttempts} {copy.failed.toLowerCase()}
+                      </span>
+                    ) : null}
+                  </td>
+                  <td style={{ color: 'var(--muted)', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
+                    {new Date(run.createdAt).toLocaleString(locale === 'tr' ? 'tr-TR' : 'en-US')}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        padding: '3px 9px',
+                        borderRadius: '999px',
+                        fontSize: '10.5px',
+                        fontWeight: 700,
+                        fontFamily: 'var(--font-mono)',
+                        background: run.failedAttempts ? 'rgba(244, 63, 94, 0.14)' : 'rgba(16, 185, 129, 0.14)',
+                        color: run.failedAttempts ? 'var(--red)' : 'var(--mint)',
+                        border: run.failedAttempts ? '1px solid rgba(244, 63, 94, 0.35)' : '1px solid rgba(16, 185, 129, 0.35)',
+                      }}
+                    >
+                      {run.failedAttempts ? copy.statusFailed : copy.statusPassed}
+                    </span>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {totalRunPages > 1 && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '12px 18px',
+            borderTop: '1px solid var(--line)',
+            background: 'var(--panel-2)',
+            fontSize: '12px',
+            color: 'var(--muted)',
+            flexWrap: 'wrap',
+            gap: '8px',
+          }}
+        >
+          <span>
+            {copy.pageLabel} {currentRunPage} / {totalRunPages} ({runStartIdx + 1}–{Math.min(runStartIdx + runsPageSize, processedRuns.length)} / {processedRuns.length})
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              type="button"
+              className="button button-ghost"
+              disabled={currentRunPage <= 1}
+              onClick={() => setRunsPage((p) => Math.max(1, p - 1))}
+              style={{ minHeight: '30px', padding: '4px 10px', fontSize: '11.5px' }}
+            >
+              {copy.prevPage}
+            </button>
+            {Array.from({ length: totalRunPages }, (_, idx) => idx + 1).map((pageNum) => (
+              <button
+                key={pageNum}
+                type="button"
+                className={pageNum === currentRunPage ? 'button button-primary' : 'button button-ghost'}
+                onClick={() => setRunsPage(pageNum)}
+                style={{ minHeight: '30px', padding: '4px 10px', fontSize: '11.5px', minWidth: '30px' }}
+              >
+                {pageNum}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="button button-ghost"
+              disabled={currentRunPage >= totalRunPages}
+              onClick={() => setRunsPage((p) => Math.min(totalRunPages, p + 1))}
+              style={{ minHeight: '30px', padding: '4px 10px', fontSize: '11.5px' }}
+            >
+              {copy.nextPage}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="app-shell">
       <Navbar
@@ -284,263 +505,769 @@ export function DashboardPage() {
         status={status}
         isConnected={isConnected}
         isConnecting={isConnecting}
-        onRepoChange={(newRepo) => {
-          setRepo(newRepo);
-        }}
+        activeSection={activeSection}
+        runsCount={totalRunsCount}
+        flakesCount={flakes.length}
+        onSectionChange={setActiveSection}
+        onRepoChange={setRepo}
         onTokenChange={setToken}
         onLocaleChange={handleLocaleChange}
         onConnect={() => void connectWorkspace(repo, token)}
         onDisconnect={disconnectWorkspace}
       />
+
       <main className="main">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">{copy.workspace} / {repo}</p>
-            <h1>{copy.connectTitle}</h1>
+        {/* SNYK-STYLE TOP PROJECT HEADER + HORIZONTAL SECTION TABS */}
+        <header className="project-topbar">
+          <div className="project-topbar-row">
+            <div>
+              <div className="breadcrumb-trail">
+                <span>{copy.projectsBreadcrumb}</span>
+                <span className="crumb-sep">›</span>
+                <span>{repo.split('/')[0] || copy.workspace}</span>
+                <span className="crumb-sep">›</span>
+                <strong>{repo.split('/')[1] || repo}</strong>
+              </div>
+              <div className="project-title-group">
+                <h1>{repo}</h1>
+                <span className="branch-pill">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="6" y1="3" x2="6" y2="15" />
+                    <circle cx="18" cy="6" r="3" />
+                    <circle cx="6" cy="18" r="3" />
+                    <path d="M18 9a9 9 0 0 1-9 9" />
+                  </svg>
+                  main
+                </span>
+              </div>
+            </div>
+
+            <div className="top-actions">
+              <button
+                type="button"
+                className="button button-ghost"
+                onClick={() => void openRunDetails('all')}
+              >
+                <span>{copy.viewAllCombined} ({summary.totalAttempts ?? 0})</span>
+                <span>⧉</span>
+              </button>
+              <span className="live-chip">
+                <i /> {summary.windowLabel ?? copy.liveData}
+              </span>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={copy.exportJson}
+                title={copy.exportJson}
+                onClick={() => downloadJson(flakes)}
+              >
+                ↓ JSON
+              </button>
+              <button type="button" className="account-chip" onClick={() => setAccountModal(true)}>
+                <span className="account-avatar">
+                  {(account?.displayName ?? account?.email ?? 'A').slice(0, 1).toUpperCase()}
+                </span>
+                <span>
+                  <strong>{account?.displayName ?? copy.account}</strong>
+                  <small>{account?.email ?? copy.connected}</small>
+                </span>
+              </button>
+            </div>
           </div>
-          <div className="top-actions">
-            <span className="live-chip">
-              <i /> {summary.windowLabel ?? copy.liveData}
-            </span>
+
+          {/* Horizontal Tab Bar (Snyk Project View Tabs) */}
+          <div className="project-tabs" role="tablist" aria-label={copy.workspace}>
             <button
               type="button"
-              className="icon-button"
-              aria-label={copy.exportJson}
-              onClick={() => downloadJson(flakes)}
+              role="tab"
+              aria-selected={activeSection === 'overview'}
+              className={`project-tab ${activeSection === 'overview' ? 'active' : ''}`}
+              onClick={() => setActiveSection('overview')}
             >
-              ↓
+              <span>{copy.tabOverview}</span>
             </button>
-            <button type="button" className="account-chip" onClick={() => setAccountModal(true)}>
-              <span className="account-avatar">
-                {(account?.displayName ?? account?.email ?? 'A').slice(0, 1).toUpperCase()}
-              </span>
-              <span>
-                <strong>{account?.displayName ?? copy.account}</strong>
-                <small>{account?.email ?? copy.connected}</small>
-              </span>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSection === 'history'}
+              className={`project-tab ${activeSection === 'history' ? 'active' : ''}`}
+              onClick={() => setActiveSection('history')}
+            >
+              <span>{copy.tabHistory}</span>
+              <span className="project-tab-count">{totalRunsCount}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSection === 'flakes'}
+              className={`project-tab ${activeSection === 'flakes' ? 'active' : ''}`}
+              onClick={() => setActiveSection('flakes')}
+            >
+              <span>{copy.tabFlakes}</span>
+              <span className="project-tab-count">{flakes.length}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSection === 'cost'}
+              className={`project-tab ${activeSection === 'cost' ? 'active' : ''}`}
+              onClick={() => setActiveSection('cost')}
+            >
+              <span>{copy.tabCostArtifacts}</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSection === 'settings'}
+              className={`project-tab ${activeSection === 'settings' ? 'active' : ''}`}
+              onClick={() => setActiveSection('settings')}
+            >
+              <span>{copy.tabSettings}</span>
             </button>
           </div>
         </header>
-        <section className="metric-strip" id="overview">
-          <div className="metric lead">
-            <span>{copy.healthScore}</span>
-            <strong>{summary.healthScore}</strong>
-            <small>{copy.calculatedHistory}</small>
-            <div className="health-line">
-              <i style={{ width: `${Math.min(100, Math.max(0, summary.healthScore))}%` }} />
-            </div>
-          </div>
-          <StatsCard label={copy.activeFlakes} value={summary.activeFlakes} detail={copy.classifiedRuns} />
-          <StatsCard label={copy.runnerWaste} value={formatTime(summary.wasteSeconds)} detail={copy.retries} />
-          <StatsCard
-            label={copy.estimatedCost}
-            value={`$${summary.wasteUsd.toFixed(2)}`}
-            detail={
-              summary.runnerCostPerMinute
-                ? `${copy.atRate} $${summary.runnerCostPerMinute.toFixed(3)} ${copy.perRunnerMinute}`
-                : copy.calculatedHistory
-            }
-            accent
-          />
-        </section>
-        {summary.recentRuns && summary.recentRuns.length > 0 && (() => {
-          const allRuns = summary.recentRuns;
-          const totalRunPages = Math.max(1, Math.ceil(allRuns.length / runsPageSize));
-          const currentPage = Math.min(runsPage, totalRunPages);
-          const startIdx = (currentPage - 1) * runsPageSize;
-          const visibleRuns = allRuns.slice(startIdx, startIdx + runsPageSize);
 
-          return (
-            <section className="cost-panel" style={{ marginTop: '1.5rem', width: '100%' }}>
-              <div className="section-head" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+        {/* SNYK-STYLE 4-COLUMN METADATA SUMMARY STRIP */}
+        <section className="project-meta-strip" aria-label={copy.analysisOverview}>
+          <div className="meta-cell">
+            <span className="meta-cell-label">{copy.metaConnectedBy}</span>
+            <span className="meta-cell-value">
+              {account?.displayName || account?.email || copy.connected}
+            </span>
+          </div>
+          <div className="meta-cell">
+            <span className="meta-cell-label">{copy.metaTestedWith}</span>
+            <span className="meta-cell-value">{copy.metaTestedWithValue}</span>
+          </div>
+          <div className="meta-cell">
+            <span className="meta-cell-label">{copy.metaTargetBranch}</span>
+            <span className="meta-cell-value" style={{ fontFamily: 'var(--font-mono)' }}>
+              main {summary.lastCommitSha ? `· ${summary.lastCommitSha.slice(0, 7)}` : ''}
+            </span>
+          </div>
+          <div className="meta-cell">
+            <span className="meta-cell-label">{copy.metaEnvironment}</span>
+            <span className="meta-cell-value" style={{ color: 'var(--mint)' }}>
+              ● {status || copy.liveGatewayConnected}
+            </span>
+          </div>
+        </section>
+
+        {/* SECTIONED TAB CONTENT AREA */}
+        <div className="dashboard-content">
+          {/* ================================================================
+              TAB 1: OVERVIEW (KPI Strip + Snyk Split Filter/Results View)
+              ================================================================ */}
+          {activeSection === 'overview' && (
+            <>
+              <section className="metric-strip" id="overview">
+                <div className="metric lead">
+                  <span>{copy.healthScore}</span>
+                  <strong>{summary.healthScore}%</strong>
+                  <small>{copy.calculatedHistory}</small>
+                  <div className="health-line">
+                    <i style={{ width: `${Math.min(100, Math.max(0, summary.healthScore))}%` }} />
+                  </div>
+                </div>
+                <StatsCard label={copy.activeFlakes} value={summary.activeFlakes} detail={copy.classifiedRuns} />
+                <StatsCard label={copy.runnerWaste} value={formatTime(summary.wasteSeconds)} detail={copy.retries} />
+                <StatsCard
+                  label={copy.estimatedCost}
+                  value={`$${summary.wasteUsd.toFixed(2)}`}
+                  detail={
+                    summary.runnerCostPerMinute
+                      ? `${copy.atRate} $${summary.runnerCostPerMinute.toFixed(3)} ${copy.perRunnerMinute}`
+                      : copy.calculatedHistory
+                  }
+                  accent
+                />
+              </section>
+
+              <div className="snyk-split-layout">
+                {/* Left Diagnostic Filter Rail (Snyk style) */}
+                <aside className="filter-rail">
+                  <div className="filter-rail-head">
+                    <h3>{copy.filterSidebarTitle}</h3>
+                    <button
+                      type="button"
+                      className="filter-reset-btn"
+                      onClick={() => {
+                        setSelectedCategories([]);
+                        setRunStatusFilter('all');
+                        setQuery('');
+                      }}
+                    >
+                      {copy.filterReset}
+                    </button>
+                  </div>
+
+                  <div className="filter-group">
+                    <div className="filter-group-title">{copy.filterCategoryLabel}</div>
+                    {[
+                      { code: 'INTERMITTENT', label: copy.catIntermittent, color: 'var(--red)' },
+                      { code: 'ENVIRONMENT', label: copy.catEnvSensitive, color: 'var(--amber)' },
+                      { code: 'INFRASTRUCTURE', label: copy.catInfraFailure, color: 'var(--blue)' },
+                      { code: 'DETERMINISTIC', label: copy.catDeterministic, color: 'var(--mint)' },
+                    ].map((cat) => {
+                      const count = flakes.filter((f) => f.category.toUpperCase().includes(cat.code)).length;
+                      return (
+                        <label key={cat.code} className="filter-check-row">
+                          <span className="filter-check-left">
+                            <input
+                              type="checkbox"
+                              checked={selectedCategories.includes(cat.code)}
+                              onChange={() => toggleCategoryFilter(cat.code)}
+                            />
+                            <span
+                              style={{
+                                width: '8px',
+                                height: '8px',
+                                borderRadius: '50%',
+                                background: cat.color,
+                                display: 'inline-block',
+                              }}
+                            />
+                            <span>{cat.label}</span>
+                          </span>
+                          <span className="filter-pill-count">{count}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  <div className="filter-group">
+                    <div className="filter-group-title">{copy.filterRunStatusLabel}</div>
+                    {[
+                      { id: 'all' as const, label: copy.filterAllRuns, count: summary.recentRuns?.length ?? 0 },
+                      {
+                        id: 'failed' as const,
+                        label: copy.filterFailedRuns,
+                        count: (summary.recentRuns ?? []).filter((r) => (r.failedAttempts ?? 0) > 0).length,
+                      },
+                      {
+                        id: 'clean' as const,
+                        label: copy.filterCleanRuns,
+                        count: (summary.recentRuns ?? []).filter((r) => (r.failedAttempts ?? 0) === 0).length,
+                      },
+                    ].map((opt) => (
+                      <label key={opt.id} className="filter-check-row">
+                        <span className="filter-check-left">
+                          <input
+                            type="radio"
+                            name="run-status-filter"
+                            checked={runStatusFilter === opt.id}
+                            onChange={() => {
+                              setRunStatusFilter(opt.id);
+                              setOverviewSubTab('runs');
+                              setRunsPage(1);
+                            }}
+                          />
+                          <span>{opt.label}</span>
+                        </span>
+                        <span className="filter-pill-count">{opt.count}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="filter-group">
+                    <div className="filter-group-title">{copy.quickActionsTitle}</div>
+                    <button
+                      type="button"
+                      className="button button-ghost full"
+                      onClick={() => void openRunDetails('all')}
+                    >
+                      <span>{copy.viewAllCombined}</span>
+                      <span>⧉</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="button button-ghost full"
+                      onClick={() => downloadCsv(filtered)}
+                    >
+                      <span>{copy.exportCsv}</span>
+                      <span>↓</span>
+                    </button>
+                  </div>
+                </aside>
+
+                {/* Right Sub-Tabbed Workspace (Snyk Issues / Dependencies style) */}
+                <section className="snyk-main-panel">
+                  <div className="subtab-bar">
+                    <div className="subtab-buttons">
+                      <button
+                        type="button"
+                        className={`subtab-btn ${overviewSubTab === 'issues' ? 'active' : ''}`}
+                        onClick={() => setOverviewSubTab('issues')}
+                      >
+                        <span>{copy.subTabFlakeIssues}</span>
+                        <span className="project-tab-count">{filtered.length}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`subtab-btn ${overviewSubTab === 'runs' ? 'active' : ''}`}
+                        onClick={() => setOverviewSubTab('runs')}
+                      >
+                        <span>{copy.subTabRecentRuns}</span>
+                        <span className="project-tab-count">{processedRuns.length}</span>
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <input
+                        className="search"
+                        style={{ minWidth: '220px', padding: '7px 12px' }}
+                        placeholder={copy.searchPlaceholder}
+                        value={query}
+                        onChange={(e) => {
+                          setQuery(e.target.value);
+                          setRunsPage(1);
+                        }}
+                      />
+                      {overviewSubTab === 'issues' ? (
+                        <button
+                          type="button"
+                          className="button button-ghost"
+                          style={{ minHeight: '34px', padding: '6px 12px' }}
+                          onClick={() => setActiveSection('flakes')}
+                        >
+                          {copy.viewAllFlakes}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="button button-ghost"
+                          style={{ minHeight: '34px', padding: '6px 12px' }}
+                          onClick={() => setActiveSection('history')}
+                        >
+                          {copy.viewFullHistory}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {overviewSubTab === 'issues' ? (
+                    <div>
+                      {filtered.length === 0 ? (
+                        <div className="empty" style={{ padding: '4rem 1.5rem' }}>
+                          <div
+                            style={{
+                              width: '48px',
+                              height: '48px',
+                              borderRadius: '50%',
+                              background: 'rgba(16, 185, 129, 0.14)',
+                              border: '1px solid rgba(52, 211, 153, 0.4)',
+                              color: 'var(--mint)',
+                              display: 'grid',
+                              placeItems: 'center',
+                              margin: '0 auto 14px',
+                              fontSize: '20px',
+                            }}
+                          >
+                            ✓
+                          </div>
+                          <strong style={{ display: 'block', fontSize: '16px', color: 'var(--fc-slate-50)', marginBottom: '6px' }}>
+                            {copy.allTestsDeterministic}
+                          </strong>
+                          <p style={{ margin: '0 auto 18px', fontSize: '13px', color: 'var(--muted)', maxWidth: '460px' }}>
+                            {copy.allTestsDeterministicDesc}
+                          </p>
+                          <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              className="button button-primary"
+                              onClick={() => void openRunDetails('all')}
+                            >
+                              {copy.viewAllCombined} ({summary.totalAttempts ?? 0} {copy.attempts.toLowerCase()}) ⧉
+                            </button>
+                            <button
+                              type="button"
+                              className="button button-ghost"
+                              onClick={() => setOverviewSubTab('runs')}
+                            >
+                              {copy.subTabRecentRuns} ({totalRunsCount}) →
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          {filtered.map((flake) => (
+                            <button
+                              type="button"
+                              className={`flake-row ${selected?.testId === flake.testId ? 'selected' : ''}`}
+                              key={flake.testId}
+                              onClick={() => {
+                                setSelected(flake);
+                                void loadTimeline(flake.testId);
+                                setActiveSection('flakes');
+                              }}
+                            >
+                              <span className={`severity ${flake.category.toLowerCase().replaceAll('_', '-')}`} />
+                              <span className="test-cell">
+                                <strong>{flake.testName}</strong>
+                                <small>{flake.filePath}</small>
+                              </span>
+                              <span className="category">{flake.category.replaceAll('_', ' ')}</span>
+                              <span className="confidence">{flake.confidence}%</span>
+                              <span className="arrow">→</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    renderRunsTable()
+                  )}
+                </section>
+              </div>
+            </>
+          )}
+
+          {/* ================================================================
+              TAB 2: HISTORY & RUNS (Full Paginated Runs + Commit Grouping)
+              ================================================================ */}
+          {activeSection === 'history' && (
+            <section className="cost-panel" style={{ width: '100%' }}>
+              <div className="section-head" style={{ borderBottom: '1px solid var(--line)', paddingBottom: '18px' }}>
                 <div>
                   <h2>{copy.analysisOverview}</h2>
-                  <p>{copy.recentIngestedRuns} ({summary.totalRuns ?? allRuns.length} {copy.totalRunsAnalyzed.toLowerCase()} · {summary.totalAttempts ?? 0} {copy.attempts.toLowerCase()})</p>
+                  <p>
+                    {copy.recentIngestedRuns} ({totalRunsCount} {copy.totalRunsAnalyzed.toLowerCase()} · {summary.totalAttempts ?? 0} {copy.attempts.toLowerCase()} · {summary.cleanTests ?? 0} {copy.cleanTests.toLowerCase()})
+                  </p>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <input
+                    className="search"
+                    style={{ minWidth: '210px', padding: '7px 12px' }}
+                    placeholder={copy.searchPlaceholder}
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      setRunsPage(1);
+                    }}
+                  />
                   <button
                     type="button"
-                    className="button button-ghost"
-                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.82rem' }}
+                    className={groupRunsByCommit ? 'button button-primary' : 'button button-ghost'}
+                    onClick={() => {
+                      setGroupRunsByCommit((prev) => !prev);
+                      setRunsPage(1);
+                    }}
+                  >
+                    {groupRunsByCommit ? copy.allRunsView : copy.groupByCommit}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-primary"
                     onClick={() => void openRunDetails('all')}
                   >
                     {copy.viewAllCombined} ({summary.totalAttempts ?? 0}) ⧉
                   </button>
-                  <span className="period">{summary.cleanTests ?? 0} {copy.cleanTests.toLowerCase()}</span>
                 </div>
               </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-color, #232936)', color: 'var(--text-muted, #8892b0)' }}>
-                      <th style={{ padding: '0.6rem 0.8rem' }}>{copy.runId}</th>
-                      <th style={{ padding: '0.6rem 0.8rem' }}>{copy.commit}</th>
-                      <th style={{ padding: '0.6rem 0.8rem' }}>{copy.attempts}</th>
-                      <th style={{ padding: '0.6rem 0.8rem' }}>{copy.lastAnalyzed}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleRuns.map((run) => (
-                      <tr
-                        key={run.id}
-                        onClick={() => void openRunDetails(run.id)}
-                        style={{
-                          borderBottom: '1px solid var(--border-color, #1f2533)',
-                          cursor: 'pointer',
-                          transition: 'background 0.15s ease',
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = '#151d28'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-                      >
-                        <td style={{ padding: '0.6rem 0.8rem' }}>
-                          <button
-                            type="button"
-                            className="text-link"
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              padding: 0,
-                              fontFamily: 'monospace',
-                              color: 'var(--accent, #38bdf8)',
-                              cursor: 'pointer',
-                              textDecoration: 'underline',
-                              fontSize: '0.9rem',
-                            }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void openRunDetails(run.id);
-                            }}
-                          >
-                            {run.id.slice(0, 8)}… ⧉
-                          </button>
-                        </td>
-                        <td style={{ padding: '0.6rem 0.8rem', fontFamily: 'monospace' }}>
-                          {run.commitSha ? run.commitSha.slice(0, 7) : '—'}
-                        </td>
-                        <td style={{ padding: '0.6rem 0.8rem' }}>
-                          <span style={{ color: '#4ade80' }}>{run.passedAttempts ?? run.totalAttempts ?? 0} {copy.passed.toLowerCase()}</span>
-                          {run.failedAttempts ? (
-                            <span style={{ color: '#f87171', marginLeft: '0.5rem', fontWeight: 600 }}>
-                              {run.failedAttempts} {copy.failed.toLowerCase()} ⚠
-                            </span>
-                          ) : null}
-                        </td>
-                        <td style={{ padding: '0.6rem 0.8rem', color: 'var(--text-muted, #8892b0)' }}>
-                          {new Date(run.createdAt).toLocaleString(locale === 'tr' ? 'tr-TR' : 'en-US')}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {totalRunPages > 1 && (
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginTop: '0.85rem',
-                    paddingTop: '0.65rem',
-                    borderTop: '1px solid var(--border-color, #1f2533)',
-                    fontSize: '0.84rem',
-                    color: 'var(--text-muted, #8892b0)',
-                    flexWrap: 'wrap',
-                    gap: '0.5rem',
-                  }}
-                >
-                  <span>
-                    {copy.pageLabel} {currentPage} / {totalRunPages} ({startIdx + 1}–{Math.min(startIdx + runsPageSize, allRuns.length)} / {allRuns.length})
-                  </span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                    <button
-                      type="button"
-                      className="button button-ghost"
-                      disabled={currentPage <= 1}
-                      onClick={() => setRunsPage((p) => Math.max(1, p - 1))}
-                      style={{ padding: '0.28rem 0.65rem', fontSize: '0.8rem', opacity: currentPage <= 1 ? 0.45 : 1 }}
-                    >
-                      {copy.prevPage}
+              {renderRunsTable()}
+            </section>
+          )}
+
+          {/* ================================================================
+              TAB 3: FLAKE ISSUES & EVIDENCE MASTER-DETAIL
+              ================================================================ */}
+          {activeSection === 'flakes' && (
+            <section className="workspace" id="flakes">
+              <FlakeList
+                flakes={filtered}
+                selected={selected}
+                query={query}
+                labels={copy}
+                onQueryChange={setQuery}
+                onSelect={(flake) => {
+                  setSelected(flake);
+                  void loadTimeline(flake.testId);
+                }}
+                onExport={() => downloadCsv(filtered)}
+              />
+              <EvidenceCard
+                selected={selected}
+                api={api}
+                timeline={timeline}
+                labels={copy}
+                setStatus={setStatus}
+                onTimelineLoad={() =>
+                  selected
+                    ? loadTimeline(selected.testId).then(() => setStatus(copy.timelineLoaded))
+                    : Promise.resolve()
+                }
+                onQuarantine={() => setModal(true)}
+              />
+            </section>
+          )}
+
+          {/* ================================================================
+              TAB 4: COST IMPACT & CI ARTIFACTS
+              ================================================================ */}
+          {activeSection === 'cost' && (
+            <>
+              <section className="metric-strip">
+                <StatsCard
+                  label={copy.estimatedCost}
+                  value={`$${summary.wasteUsd.toFixed(2)}`}
+                  detail={copy.costBreakdownDesc}
+                  accent
+                />
+                <StatsCard
+                  label={copy.wastedComputeTime}
+                  value={formatTime(summary.wasteSeconds)}
+                  detail={copy.retries}
+                />
+                <StatsCard
+                  label={copy.activeRunnerRate}
+                  value={`$${(summary.runnerCostPerMinute ?? 0.008).toFixed(3)}/m`}
+                  detail={copy.perRunnerMinute}
+                />
+                <StatsCard
+                  label={copy.cleanPassRatio}
+                  value={`${summary.healthScore}%`}
+                  detail={`${summary.cleanTests ?? 0} ${copy.cleanTests.toLowerCase()}`}
+                />
+              </section>
+
+              <section className="bottom-grid" id="cost">
+                <div className="cost-panel" style={{ padding: '22px' }}>
+                  <div className="section-head" style={{ padding: '0 0 16px' }}>
+                    <div>
+                      <h2>{copy.costBreakdownTitle}</h2>
+                      <p>{copy.costBreakdownDesc}</p>
+                    </div>
+                    <span className="period">{summary.windowLabel ?? copy.liveData}</span>
+                  </div>
+                  <div className="cost-number" style={{ padding: '12px 0' }}>
+                    ${summary.wasteUsd.toFixed(2)} <small>{copy.estimatedWaste}</small>
+                  </div>
+                  <div
+                    style={{
+                      marginTop: '18px',
+                      padding: '16px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--panel-2)',
+                      border: '1px solid var(--line)',
+                      display: 'grid',
+                      gap: '10px',
+                      fontSize: '12.5px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--muted)' }}>{copy.totalRunsAnalyzed}</span>
+                      <strong style={{ fontFamily: 'var(--font-mono)' }}>{totalRunsCount}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--muted)' }}>{copy.attempts}</span>
+                      <strong style={{ fontFamily: 'var(--font-mono)' }}>{summary.totalAttempts ?? 0}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--muted)' }}>{copy.activeFlakes}</span>
+                      <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--amber)' }}>{summary.activeFlakes}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="export-panel" id="exports">
+                  <h2>{copy.artifacts}</h2>
+                  <p>{copy.exportDescription}</p>
+                  <div className="artifact-actions">
+                    <button type="button" onClick={() => setStatus(copy.jestRequested)}>
+                      <span>{copy.jestSkipList}</span>
+                      <span>⧉</span>
                     </button>
-                    {Array.from({ length: totalRunPages }, (_, idx) => idx + 1).map((pageNum) => (
-                      <button
-                        key={pageNum}
-                        type="button"
-                        className={pageNum === currentPage ? 'button button-primary' : 'button button-ghost'}
-                        onClick={() => setRunsPage(pageNum)}
-                        style={{ padding: '0.28rem 0.6rem', fontSize: '0.8rem', minWidth: '2rem' }}
-                      >
-                        {pageNum}
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      className="button button-ghost"
-                      disabled={currentPage >= totalRunPages}
-                      onClick={() => setRunsPage((p) => Math.min(totalRunPages, p + 1))}
-                      style={{ padding: '0.28rem 0.65rem', fontSize: '0.8rem', opacity: currentPage >= totalRunPages ? 0.45 : 1 }}
-                    >
-                      {copy.nextPage}
+                    <button type="button" onClick={() => setStatus(copy.playwrightRequested)}>
+                      <span>{copy.playwrightSkipList}</span>
+                      <span>⧉</span>
+                    </button>
+                    <button type="button" onClick={() => downloadJson(flakes)}>
+                      <span>{copy.exportJson}</span>
+                      <span>↓</span>
+                    </button>
+                    <button type="button" onClick={() => downloadCsv(filtered)}>
+                      <span>{copy.exportCsv}</span>
+                      <span>↓</span>
                     </button>
                   </div>
                 </div>
-              )}
-            </section>
-          );
-        })()}
-        <section className="workspace" id="flakes">
-          <FlakeList
-            flakes={filtered}
-            selected={selected}
-            query={query}
-            labels={copy}
-            onQueryChange={setQuery}
-            onSelect={(flake) => {
-              setSelected(flake);
-              void loadTimeline(flake.testId);
-            }}
-            onExport={() => downloadCsv(filtered)}
-          />
-          <EvidenceCard
-            selected={selected}
-            api={api}
-            timeline={timeline}
-            labels={copy}
-            setStatus={setStatus}
-            onTimelineLoad={() =>
-              selected
-                ? loadTimeline(selected.testId).then(() => setStatus(copy.timelineLoaded))
-                : Promise.resolve()
-            }
-            onQuarantine={() => setModal(true)}
-          />
-        </section>
-        <section className="bottom-grid" id="cost">
-          <div className="cost-panel">
-            <div className="section-head">
-              <div>
-                <h2>{copy.costImpact}</h2>
-                <p>{copy.exportDescription}</p>
-              </div>
-              <span className="period">{summary.windowLabel ?? copy.liveData}</span>
+              </section>
+            </>
+          )}
+
+          {/* ================================================================
+              TAB 5: PROJECT & ACCOUNT SETTINGS (Snyk Settings Tab)
+              ================================================================ */}
+          {activeSection === 'settings' && (
+            <div className="bottom-grid">
+              <section className="export-panel">
+                <span className="eyebrow">{copy.workspace}</span>
+                <h2 style={{ marginTop: '6px' }}>{copy.switchRepoTitle}</h2>
+                <p>{copy.switchRepoDesc}</p>
+
+                <div className="settings-section" style={{ marginTop: '16px' }}>
+                  <label className="field-label" htmlFor="settings-repo">{copy.repository}</label>
+                  <input
+                    id="settings-repo"
+                    className="input"
+                    placeholder={copy.repoPlaceholder}
+                    value={repo}
+                    onChange={(event) => {
+                      setRepo(event.target.value);
+                      setRepositoryTokenConfigured(false);
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '8px' }}>
+                    <button
+                      type="button"
+                      className="button button-primary"
+                      disabled={isConnecting || !repo.trim()}
+                      onClick={() => void connectWorkspace(repo, token)}
+                    >
+                      {isConnecting ? copy.connecting : copy.connect} ↗
+                    </button>
+                    {isConnected && (
+                      <button
+                        type="button"
+                        className="button button-danger"
+                        onClick={disconnectWorkspace}
+                      >
+                        {copy.disconnect} ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="settings-section" style={{ marginTop: '18px' }}>
+                  <div className="settings-row">
+                    <span className="field-label">{copy.tokenStatus}</span>
+                    <button
+                      type="button"
+                      className="button button-ghost"
+                      onClick={() => void loadRepositoryTokenStatus()}
+                    >
+                      {copy.refresh}
+                    </button>
+                  </div>
+                  {repositoryTokenConfigured ? (
+                    <>
+                      <p className="field-help">{copy.tokenMasked}</p>
+                      <div className="token-controls">
+                        <input
+                          className="input"
+                          type="password"
+                          value="flakecheck-token-configured"
+                          readOnly
+                          aria-label={copy.tokenMasked}
+                        />
+                        <button type="button" className="button button-ghost" onClick={copyOrRegenerateRepositoryToken}>
+                          {copy.copyToken}
+                        </button>
+                        <button type="button" className="button button-ghost" onClick={() => void createRepositoryToken()}>
+                          {copy.regenerateToken}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <button type="button" className="button button-primary" onClick={() => void createRepositoryToken()}>
+                      {copy.projectToken} +
+                    </button>
+                  )}
+                </div>
+              </section>
+
+              <section className="export-panel">
+                <span className="eyebrow">{copy.settings}</span>
+                <h2 style={{ marginTop: '6px' }}>{account?.displayName ?? copy.account}</h2>
+                <p>{account?.email ?? copy.accountDescription}</p>
+
+                <div className="settings-section" style={{ marginTop: '16px' }}>
+                  <label className="field-label" htmlFor="inline-display-name">{copy.displayName}</label>
+                  <input
+                    id="inline-display-name"
+                    className="input"
+                    value={account?.displayName ?? ''}
+                    onChange={(event) =>
+                      setAccount((current) => (current ? { ...current, displayName: event.target.value } : current))
+                    }
+                  />
+                </div>
+
+                <div className="settings-section" style={{ marginTop: '14px' }}>
+                  <div className="settings-row">
+                    <span className="field-label">{copy.github}</span>
+                    <strong className="settings-value">
+                      {account?.githubConnected ? copy.connected : copy.notConnected}
+                    </strong>
+                  </div>
+                  {!account?.githubConnected && (
+                    <a className="button button-github full" href={apiUrl('/api/auth/github')}>
+                      <span>{copy.connectGithub}</span>
+                      <span>↗</span>
+                    </a>
+                  )}
+                </div>
+
+                <div className="modal-actions account-modal-actions">
+                  <button
+                    type="button"
+                    className="button button-primary"
+                    onClick={() =>
+                      fetch(apiUrl('/api/account/profile'), {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+                        credentials: 'include',
+                        body: JSON.stringify({ displayName: account?.displayName ?? '', locale }),
+                      })
+                        .then(async (response) => {
+                          if (!response.ok) throw friendlyResponseError(response, copy.saveSettingsError);
+                          setStatus(copy.saved);
+                        })
+                        .catch((error) => setStatus(userFacingMessage(error, copy.saveSettingsError)))
+                    }
+                  >
+                    {copy.save}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-ghost"
+                    onClick={() => {
+                      setSessionToken(null);
+                      fetch(apiUrl('/api/auth/logout'), {
+                        method: 'POST',
+                        credentials: 'include',
+                        headers: { ...authHeaders() },
+                      }).finally(() => window.location.replace('/login'));
+                    }}
+                  >
+                    {copy.signOut}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-danger"
+                    onClick={() =>
+                      fetch(apiUrl('/api/account/delete'), {
+                        method: 'DELETE',
+                        credentials: 'include',
+                        headers: { ...authHeaders() },
+                      })
+                        .then(async (response) => {
+                          if (!response.ok) throw friendlyResponseError(response, copy.deleteAccountConfirm);
+                          setSessionToken(null);
+                          setStatus(copy.accountDeleted);
+                        })
+                        .catch((error) => setStatus(userFacingMessage(error, copy.deleteAccountConfirm)))
+                    }
+                  >
+                    {copy.deleteAccount}
+                  </button>
+                </div>
+              </section>
             </div>
-            <div className="cost-number">
-              ${summary.wasteUsd.toFixed(2)} <small>{copy.estimatedWaste}</small>
-            </div>
-          </div>
-          <div className="export-panel" id="exports">
-            <h2>{copy.artifacts}</h2>
-            <p>{copy.exportDescription}</p>
-            <div className="artifact-actions">
-              <button type="button" onClick={() => setStatus(copy.jestRequested)}>
-                {copy.jestSkipList} <span>⧉</span>
-              </button>
-              <button type="button" onClick={() => setStatus(copy.playwrightRequested)}>
-                {copy.playwrightSkipList} <span>⧉</span>
-              </button>
-            </div>
-          </div>
-        </section>
+          )}
+        </div>
       </main>
+
       {modal && selected && (
         <QuarantineModal
           testName={selected.testName}
@@ -551,6 +1278,7 @@ export function DashboardPage() {
           onConfirm={() => quarantine(true)}
         />
       )}
+
       {accountModal && (
         <div className="modal-backdrop" onClick={() => setAccountModal(false)}>
           <div
@@ -708,6 +1436,7 @@ export function DashboardPage() {
           </div>
         </div>
       )}
+
       {createdToken && (
         <div className="modal-backdrop" role="presentation">
           <div
@@ -753,6 +1482,7 @@ export function DashboardPage() {
           </div>
         </div>
       )}
+
       {selectedRunId && (
         <RunDetailsModal
           runId={selectedRunId}
