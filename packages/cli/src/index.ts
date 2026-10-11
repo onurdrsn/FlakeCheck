@@ -368,42 +368,68 @@ type HealthCheckResponse = { status: string; gateway?: string; services?: Health
 
 program.command('doctor')
   .description('check local configuration, Gateway, and backend service health')
+  .option('--api-url <url>', 'Gateway URL to check (alias for --gateway)')
+  .option('--gateway <url>', 'Gateway URL to check')
+  .option('--repo <owner/name>', 'canonical repository', validRepo)
+  .option('--token <token>', 'repository API token')
   .option('--json', 'output diagnostics as raw JSON')
-  .action(async (options: { json?: boolean }) => {
-    let config: Config | null = null;
+  .action(async (options: { apiUrl?: string; gateway?: string; repo?: string; token?: string; json?: boolean }) => {
+    let fileConfig: Config | null = null;
     let configError: string | null = null;
     try {
-      config = loadConfig();
+      fileConfig = loadConfig();
     } catch (error) {
       configError = error instanceof Error ? error.message : String(error);
     }
 
-    if (!config) {
+    const cliGatewayUrl = (options.apiUrl ?? options.gateway)?.trim().replace(/\/+$/, '');
+    const gatewayUrl = cliGatewayUrl || fileConfig?.gatewayUrl || '';
+    const repo = options.repo ?? fileConfig?.repo ?? '';
+    const token = options.token ?? fileConfig?.token ?? '';
+    const hasRepoCredentials = Boolean(repo && token);
+
+    if (!gatewayUrl) {
       if (options.json) {
-        console.log(JSON.stringify({ status: 'error', error: configError }, null, 2));
+        console.log(JSON.stringify({ status: 'error', error: configError ?? 'Missing gatewayUrl' }, null, 2));
       } else {
-        console.error(`\x1b[31m✖ Configuration Error:\x1b[0m ${configError}`);
+        console.error(`\x1b[31m✖ Configuration Error:\x1b[0m ${configError ?? 'Pass --api-url <url> or run "flakecheck init" first'}`);
       }
       throw new CliError(1, 'Doctor check failed: missing or invalid configuration');
     }
 
-    const api = new GatewayClient(config);
+    const effectiveConfig: Config = {
+      gatewayUrl,
+      repo: repo || 'standalone/health-check',
+      token: token || '',
+    };
+    const api = new GatewayClient(effectiveConfig);
 
     let health: HealthCheckResponse | null = null;
     let healthError: string | null = null;
     try {
-      health = await api.request<HealthCheckResponse>('/api/health');
+      const res = await api.request<HealthCheckResponse>('/api/health', { headers: { Accept: 'application/json' } });
+      if (typeof res === 'object' && res !== null && 'status' in res) {
+        health = res;
+      } else {
+        healthError = 'Gateway returned non-JSON response on /api/health (ensure latest gateway worker is deployed with run_worker_first)';
+      }
     } catch (error) {
       healthError = error instanceof Error ? error.message : String(error);
     }
 
     let repoAuthOk = false;
     let repoAuthError: string | null = null;
-    try {
-      await api.request<{ activeFlakes?: number }>('/api/summary');
-      repoAuthOk = true;
-    } catch (error) {
-      repoAuthError = error instanceof Error ? error.message : String(error);
+    if (hasRepoCredentials) {
+      try {
+        const summaryRes = await api.request< Record<string, unknown> >('/api/summary', { headers: { Accept: 'application/json' } });
+        if (typeof summaryRes === 'object' && summaryRes !== null) {
+          repoAuthOk = true;
+        } else {
+          repoAuthError = 'Gateway returned non-JSON response on /api/summary';
+        }
+      } catch (error) {
+        repoAuthError = error instanceof Error ? error.message : String(error);
+      }
     }
 
     const defaultServiceNames = [
@@ -424,15 +450,14 @@ program.command('doctor')
       console.log(JSON.stringify({
         status: overallHealthy ? 'ok' : 'degraded',
         config: {
-          path: configPath,
-          repo: config.repo,
-          gatewayUrl: config.gatewayUrl,
-          tokenConfigured: true,
+          path: fileConfig ? configPath : null,
+          repo: repo || null,
+          gatewayUrl,
+          tokenConfigured: Boolean(token),
         },
-        repositoryAuth: {
-          status: repoAuthOk ? 'ok' : 'error',
-          error: repoAuthError,
-        },
+        repositoryAuth: hasRepoCredentials
+          ? { status: repoAuthOk ? 'ok' : 'error', error: repoAuthError }
+          : { status: 'skipped', reason: 'No repository token configured (standalone gateway check)' },
         gateway: health?.gateway ?? (health ? 'ok' : 'unreachable'),
         services,
         ...(healthError ? { gatewayError: healthError } : {}),
@@ -440,14 +465,24 @@ program.command('doctor')
     } else {
       console.log('\x1b[1m\x1b[36m🩺 FlakeCheck Doctor Diagnostics\x1b[0m\n');
       console.log('\x1b[1m[Local Configuration]\x1b[0m');
-      console.log(`  \x1b[32m✔\x1b[0m Config file: ${basename(configPath)} (loaded)`);
-      console.log(`  \x1b[32m✔\x1b[0m Repository: ${config.repo}`);
-      console.log(`  \x1b[32m✔\x1b[0m Gateway URL: ${config.gatewayUrl}`);
-      console.log(`  \x1b[32m✔\x1b[0m API Token: ${config.token.slice(0, 6)}...${config.token.slice(-4)}`);
+      if (fileConfig) {
+        console.log(`  \x1b[32m✔\x1b[0m Config file: ${basename(configPath)} (loaded)`);
+      } else {
+        console.log(`  \x1b[36mℹ\x1b[0m Config file: ${basename(configPath)} not found (using CLI flags)`);
+      }
+      console.log(`  \x1b[32m✔\x1b[0m Gateway URL: ${gatewayUrl}`);
+      if (repo) {
+        console.log(`  \x1b[32m✔\x1b[0m Repository: ${repo}`);
+      }
+      if (token) {
+        console.log(`  \x1b[32m✔\x1b[0m API Token: ${token.slice(0, 6)}...${token.slice(-4)}`);
+      }
 
       console.log('\n\x1b[1m[Repository Authentication]\x1b[0m');
-      if (repoAuthOk) {
-        console.log(`  \x1b[32m✔\x1b[0m Verified token access for ${config.repo}`);
+      if (!hasRepoCredentials) {
+        console.log('  \x1b[36mℹ\x1b[0m Skipped (pass --repo & --token or run "flakecheck init" to verify repo access)');
+      } else if (repoAuthOk) {
+        console.log(`  \x1b[32m✔\x1b[0m Verified token access for ${repo}`);
       } else {
         console.log(`  \x1b[33m!\x1b[0m Repository access check: ${repoAuthError}`);
       }
@@ -468,8 +503,8 @@ program.command('doctor')
       }
 
       console.log('\n\x1b[1m[Status Verdict]\x1b[0m');
-      if (overallHealthy && repoAuthOk) {
-        console.log('  \x1b[32m✔ All systems and configurations are operational.\x1b[0m\n');
+      if (overallHealthy && (repoAuthOk || !hasRepoCredentials)) {
+        console.log('  \x1b[32m✔ All checked systems and services are operational.\x1b[0m\n');
       } else if (overallHealthy) {
         console.log('  \x1b[33m! Services are healthy, but repository token verification requires attention.\x1b[0m\n');
       } else {
