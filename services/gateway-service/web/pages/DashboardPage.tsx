@@ -11,6 +11,7 @@ import { StatsCard } from '../components/StatsCard';
 import { WorkspaceConnector } from '../components/WorkspaceConnector';
 import type { Flake, RunDetails, SummaryRun } from '../types';
 import { apiUrl, authHeaders, friendlyResponseError, setSessionToken, startOAuth, userFacingMessage } from '../http';
+import { toast } from '../toast';
 
 const WORKSPACE_REPOSITORY_KEY = 'flakecheck.workspace.repository';
 
@@ -155,7 +156,9 @@ export function DashboardPage() {
       const data = await api<RunDetails>(`/api/runs/${encodeURIComponent(runId)}`);
       setRunDetails(data);
     } catch (err) {
-      setRunDetailsError(userFacingMessage(err, copy.failedToLoadRun));
+      const msg = userFacingMessage(err, copy.failedToLoadRun);
+      setRunDetailsError(msg);
+      toast.error(copy.failedToLoadRun, msg);
     } finally {
       setLoadingRunDetails(false);
     }
@@ -174,7 +177,9 @@ export function DashboardPage() {
         { method: 'DELETE' },
       );
       await load();
-      setStatus(isAll ? copy.historyCleared : copy.runDeleted);
+      const successTitle = isAll ? copy.historyCleared : copy.runDeleted;
+      setStatus(successTitle);
+      toast.success(successTitle, repo);
       if (selectedRunId) {
         if (
           isAll ||
@@ -190,7 +195,9 @@ export function DashboardPage() {
         }
       }
     } catch (err) {
-      setStatus(userFacingMessage(err, copy.deleteRunError));
+      const msg = userFacingMessage(err, copy.deleteRunError);
+      setStatus(msg);
+      toast.error(copy.deleteRunError, msg);
     } finally {
       setDeletingRunId(null);
     }
@@ -201,6 +208,7 @@ export function DashboardPage() {
   const handleLocaleChange = (nextLocale: Locale) => {
     setLocale(nextLocale);
     setStoredLocale(nextLocale);
+    toast.info(translations[nextLocale].language, nextLocale.toUpperCase());
   };
 
   useEffect(() => {
@@ -326,8 +334,11 @@ export function DashboardPage() {
       await connect(load);
       setConnectedRepo(normalizedRepo);
       setStatus(copy.liveGatewayConnected);
+      toast.success(copy.liveGatewayConnected, normalizedRepo);
     } catch (error) {
-      setStatus(userFacingMessage(error, copy.connectPrompt));
+      const msg = userFacingMessage(error, copy.connectPrompt);
+      setStatus(msg);
+      toast.error(copy.connectTitle, msg);
     } finally {
       setIsConnecting(false);
       setPendingConnect(false);
@@ -335,6 +346,7 @@ export function DashboardPage() {
   };
 
   const disconnectWorkspace = () => {
+    const prevRepo = repo;
     window.localStorage.removeItem(WORKSPACE_REPOSITORY_KEY);
     setConnectedRepo('');
     setRepo('');
@@ -343,6 +355,7 @@ export function DashboardPage() {
     setFlakes([]);
     setSelected(null);
     setStatus(copy.disconnected);
+    toast.info(copy.disconnected, prevRepo || undefined);
   };
 
   async function quarantine(state: boolean) {
@@ -352,11 +365,19 @@ export function DashboardPage() {
         method: 'POST',
         body: JSON.stringify({ testId: selected.testId, state, reason }),
       });
-      setStatus(state ? `${selected.testName} ${copy.movedToQuarantine}` : `${selected.testName} ${copy.graduatedFromQuarantine}`);
+      const msg = state ? `${selected.testName} ${copy.movedToQuarantine}` : `${selected.testName} ${copy.graduatedFromQuarantine}`;
+      setStatus(msg);
+      if (state) {
+        toast.warning(selected.testName, copy.movedToQuarantine);
+      } else {
+        toast.success(selected.testName, copy.graduatedFromQuarantine);
+      }
       setModal(false);
       setReason('');
     } catch (error) {
-      setStatus(userFacingMessage(error, copy.updateQuarantineError));
+      const msg = userFacingMessage(error, copy.updateQuarantineError);
+      setStatus(msg);
+      toast.error(copy.updateQuarantineError, msg);
     }
   }
 
@@ -374,8 +395,11 @@ export function DashboardPage() {
       setRepositoryTokenConfigured(true);
       setTokenCopied(false);
       setStatus(copy.tokenCreated);
+      toast.success(copy.tokenCreated, repo);
     } catch (error) {
-      setStatus(userFacingMessage(error, copy.createTokenError));
+      const msg = userFacingMessage(error, copy.createTokenError);
+      setStatus(msg);
+      toast.error(copy.createTokenError, msg);
     }
   }
 
@@ -392,8 +416,10 @@ export function DashboardPage() {
     try {
       await navigator.clipboard.writeText(createdToken);
       setTokenCopied(true);
+      toast.success(copy.copied, copy.projectToken);
     } catch {
       setStatus(copy.copyUnavailable);
+      toast.error(copy.copyUnavailable);
     }
   }
 
@@ -477,6 +503,7 @@ export function DashboardPage() {
       recentRuns: processedRuns,
       attempts: allDetails?.attempts ?? [],
     });
+    toast.success(copy.exportJson, `flakecheck-report.json (${repo})`);
   };
 
   const exportReportCsv = async () => {
@@ -532,6 +559,7 @@ export function DashboardPage() {
           ];
         }),
       );
+      toast.success(copy.exportCsv, `flakecheck-report.csv (${repo})`);
       return;
     }
 
@@ -551,6 +579,7 @@ export function DashboardPage() {
           item.runId,
         ]),
       );
+      toast.success(copy.exportCsv, `flakecheck-report.csv (${repo})`);
       return;
     }
 
@@ -567,6 +596,7 @@ export function DashboardPage() {
         typeof r.createdAt === 'string' ? r.createdAt : new Date(r.createdAt).toISOString(),
       ]),
     );
+    toast.success(copy.exportCsv, `flakecheck-report.csv (${repo})`);
   };
 
   const renderRunsTable = () => (
@@ -1370,11 +1400,23 @@ export function DashboardPage() {
                   <h2>{copy.artifacts}</h2>
                   <p>{copy.exportDescription}</p>
                   <div className="artifact-actions">
-                    <button type="button" onClick={() => setStatus(copy.jestRequested)}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatus(copy.jestRequested);
+                        toast.info(copy.jestSkipList, copy.jestRequested);
+                      }}
+                    >
                       <span>{copy.jestSkipList}</span>
                       <span>⧉</span>
                     </button>
-                    <button type="button" onClick={() => setStatus(copy.playwrightRequested)}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatus(copy.playwrightRequested);
+                        toast.info(copy.playwrightSkipList, copy.playwrightRequested);
+                      }}
+                    >
                       <span>{copy.playwrightSkipList}</span>
                       <span>⧉</span>
                     </button>
@@ -1441,7 +1483,10 @@ export function DashboardPage() {
                     <button
                       type="button"
                       className="button button-ghost"
-                      onClick={() => void loadRepositoryTokenStatus()}
+                      onClick={() => {
+                        void loadRepositoryTokenStatus();
+                        toast.info(copy.tokenStatus, repo);
+                      }}
                     >
                       {copy.refresh}
                     </button>
@@ -1526,8 +1571,13 @@ export function DashboardPage() {
                         .then(async (response) => {
                           if (!response.ok) throw friendlyResponseError(response, copy.saveSettingsError);
                           setStatus(copy.saved);
+                          toast.success(copy.saved, account?.displayName || undefined);
                         })
-                        .catch((error) => setStatus(userFacingMessage(error, copy.saveSettingsError)))
+                        .catch((error) => {
+                          const msg = userFacingMessage(error, copy.saveSettingsError);
+                          setStatus(msg);
+                          toast.error(copy.saveSettingsError, msg);
+                        })
                     }
                   >
                     {copy.save}
@@ -1559,8 +1609,13 @@ export function DashboardPage() {
                           if (!response.ok) throw friendlyResponseError(response, copy.deleteAccountConfirm);
                           setSessionToken(null);
                           setStatus(copy.accountDeleted);
+                          toast.warning(copy.accountDeleted);
                         })
-                        .catch((error) => setStatus(userFacingMessage(error, copy.deleteAccountConfirm)))
+                        .catch((error) => {
+                          const msg = userFacingMessage(error, copy.deleteAccountConfirm);
+                          setStatus(msg);
+                          toast.error(copy.deleteAccount, msg);
+                        })
                     }
                   >
                     {copy.deleteAccount}
@@ -1700,8 +1755,13 @@ export function DashboardPage() {
                     .then(async (response) => {
                       if (!response.ok) throw friendlyResponseError(response, copy.saveSettingsError);
                       setStatus(copy.saved);
+                      toast.success(copy.saved, account?.displayName || undefined);
                     })
-                    .catch((error) => setStatus(userFacingMessage(error, copy.saveSettingsError)))
+                    .catch((error) => {
+                      const msg = userFacingMessage(error, copy.saveSettingsError);
+                      setStatus(msg);
+                      toast.error(copy.saveSettingsError, msg);
+                    })
                 }
               >
                 {copy.save}
@@ -1733,9 +1793,14 @@ export function DashboardPage() {
                       if (!response.ok) throw friendlyResponseError(response, copy.deleteAccountConfirm);
                       setSessionToken(null);
                       setStatus(copy.accountDeleted);
+                      toast.warning(copy.accountDeleted);
                       setAccountModal(false);
                     })
-                    .catch((error) => setStatus(userFacingMessage(error, copy.deleteAccountConfirm)))
+                    .catch((error) => {
+                      const msg = userFacingMessage(error, copy.deleteAccountConfirm);
+                      setStatus(msg);
+                      toast.error(copy.deleteAccount, msg);
+                    })
                 }
               >
                 {copy.deleteAccount}

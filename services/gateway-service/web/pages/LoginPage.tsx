@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { apiUrl, friendlyResponseError, readJson, setSessionToken, startOAuth, userFacingMessage } from '../http';
 import { LegalModal } from '../components/LegalModal';
 import { getStoredLocale, setStoredLocale, translations, type Locale } from '../i18n';
 import { LanguageSelector } from '../components/LanguageSelector';
+import { OtpInput, type OtpInputController } from '../components/OtpInput';
+import { toast } from '../toast';
 
 export function LoginPage() {
   const [locale, setLocale] = useState<Locale>(() => getStoredLocale());
@@ -11,18 +13,22 @@ export function LoginPage() {
   const [code, setCode] = useState('');
   const [requested, setRequested] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [status, setStatus] = useState('');
   const [legalDocument, setLegalDocument] = useState<'terms' | 'privacy' | null>(null);
+  const otpRef = useRef<OtpInputController | null>(null);
 
   const handleLocaleChange = (nextLocale: Locale) => {
     setLocale(nextLocale);
     setStoredLocale(nextLocale);
+    toast.info(translations[nextLocale].language, nextLocale.toUpperCase());
   };
 
   async function requestCode() {
     const normalizedEmail = email.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g, '').trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normalizedEmail)) {
       setStatus(copy.emailInvalid);
+      toast.warning(copy.workEmail, copy.emailInvalid);
       return;
     }
     setEmail(normalizedEmail);
@@ -34,23 +40,49 @@ export function LoginPage() {
     });
     if (!response.ok) throw friendlyResponseError(response, copy.loginError);
     await readJson(response);
+    setCode('');
     setRequested(true);
     setStatus(copy.emailSent);
+    toast.success(copy.emailSent, normalizedEmail);
   }
 
-  async function verifyCode() {
-    const response = await fetch(apiUrl('/api/auth/otp/verify'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ email, code, termsAccepted: accepted, privacyAccepted: accepted }),
-    });
-    if (!response.ok) throw friendlyResponseError(response, copy.codeInvalid);
-    const data = await readJson<{ ok: boolean; token?: string }>(response);
-    if (data?.token) {
-      setSessionToken(data.token);
+  async function verifyCode(overrideCode?: string, overrideAccepted?: boolean) {
+    const targetCode = (overrideCode ?? code).trim();
+    const isConsentAccepted = overrideAccepted ?? accepted;
+    if (targetCode.length < 6 || !isConsentAccepted || verifying) return;
+
+    setVerifying(true);
+    try {
+      const response = await fetch(apiUrl('/api/auth/otp/verify'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          email,
+          code: targetCode,
+          termsAccepted: isConsentAccepted,
+          privacyAccepted: isConsentAccepted,
+        }),
+      });
+      if (!response.ok) throw friendlyResponseError(response, copy.codeInvalid);
+      const data = await readJson<{ ok: boolean; token?: string }>(response);
+      if (data?.token) {
+        setSessionToken(data.token);
+      }
+      otpRef.current?.setSuccess('Verified ✓');
+      setStatus('');
+      toast.success(copy.enterWorkspace, email);
+      window.setTimeout(() => {
+        window.location.replace('/dashboard');
+      }, 280);
+    } catch (error) {
+      const msg = userFacingMessage(error, copy.codeInvalid);
+      otpRef.current?.setError(msg);
+      setStatus('');
+      toast.error(copy.signInCode, msg);
+    } finally {
+      setVerifying(false);
     }
-    window.location.replace('/dashboard');
   }
 
   return (
@@ -63,88 +95,159 @@ export function LoginPage() {
             <small>{copy.brandTagline}</small>
           </div>
         </a>
-        <span className="eyebrow">{copy.workspaceAccess}</span>
-        <h1>{copy.loginTitle}</h1>
-        <p>{copy.loginDescription}</p>
-        <label className="field-label" htmlFor="email">{copy.workEmail}</label>
-        <input
-          id="email"
-          className="input"
-          type="email"
-          autoComplete="email"
-          inputMode="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder={copy.workEmailPlaceholder}
-        />
-        {requested && (
+
+        {!requested ? (
           <>
-            <label className="field-label" htmlFor="code">{copy.signInCode}</label>
+            <span className="eyebrow">{copy.workspaceAccess}</span>
+            <h1>{copy.loginTitle}</h1>
+            <p>{copy.loginDescription}</p>
+            <label className="field-label" htmlFor="email">{copy.workEmail}</label>
             <input
-              id="code"
+              id="email"
               className="input"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              placeholder={copy.signInCodePlaceholder}
+              type="email"
+              autoComplete="email"
+              inputMode="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && email.trim()) {
+                  event.preventDefault();
+                  void requestCode().catch((error) => {
+                    const msg = userFacingMessage(error, copy.loginError);
+                    setStatus(msg);
+                    toast.error(copy.loginTitle, msg);
+                  });
+                }
+              }}
+              placeholder={copy.workEmailPlaceholder}
             />
+            <label className="consent">
+              <input
+                type="checkbox"
+                checked={accepted}
+                onChange={(event) => setAccepted(event.target.checked)}
+              />{' '}
+              {copy.agreeConsent}{' '}
+              <button type="button" className="inline-link" onClick={() => setLegalDocument('terms')}>
+                {copy.termsNav}
+              </button>{' '}
+              {copy.andText}{' '}
+              <button type="button" className="inline-link" onClick={() => setLegalDocument('privacy')}>
+                {copy.privacyNav}
+              </button>
+              .
+            </label>
+            <button
+              type="button"
+              className="button button-primary full"
+              disabled={!email}
+              onClick={() =>
+                requestCode().catch((error) => {
+                  const msg = userFacingMessage(error, copy.loginError);
+                  setStatus(msg);
+                  toast.error(copy.loginTitle, msg);
+                })
+              }
+            >
+              {copy.emailMeCode}
+            </button>
+            {status && <p className="auth-status">{status}</p>}
+            <div className="auth-divider">
+              <span>{copy.orText}</span>
+            </div>
+            <div className="oauth-actions">
+              <a
+                className="button button-ghost"
+                href={apiUrl('/api/auth/google')}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void startOAuth('google');
+                }}
+              >
+                <GoogleLogo />Google
+              </a>
+              <a
+                className="button button-ghost"
+                href={apiUrl('/api/auth/github')}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void startOAuth('github');
+                }}
+              >
+                <GitHubLogo />GitHub
+              </a>
+            </div>
           </>
+        ) : (
+          <div className="otp-screen">
+            <div className="otp-screen-top">
+              <button
+                type="button"
+                className="otp-back-btn"
+                onClick={() => {
+                  setRequested(false);
+                  setCode('');
+                  setStatus('');
+                }}
+              >
+                ← {copy.back}
+              </button>
+            </div>
+            <span className="eyebrow">{copy.signInCode}</span>
+            <h1>{copy.loginTitle}</h1>
+            <p className="otp-subtitle">{copy.emailSent}</p>
+
+            <OtpInput
+              ref={otpRef}
+              length={6}
+              ariaGroupLabel={copy.signInCode}
+              errorMessage={copy.codeInvalid}
+              onChange={(nextCode) => setCode(nextCode)}
+              onComplete={(completedCode) => {
+                setCode(completedCode);
+                if (accepted) {
+                  void verifyCode(completedCode, true);
+                }
+              }}
+            />
+
+            {!accepted && (
+              <label className="consent">
+                <input
+                  type="checkbox"
+                  checked={accepted}
+                  onChange={(event) => {
+                    const nextAccepted = event.target.checked;
+                    setAccepted(nextAccepted);
+                    if (nextAccepted && code.length === 6) {
+                      void verifyCode(code, true);
+                    }
+                  }}
+                />{' '}
+                {copy.agreeConsent}{' '}
+                <button type="button" className="inline-link" onClick={() => setLegalDocument('terms')}>
+                  {copy.termsNav}
+                </button>{' '}
+                {copy.andText}{' '}
+                <button type="button" className="inline-link" onClick={() => setLegalDocument('privacy')}>
+                  {copy.privacyNav}
+                </button>
+                .
+              </label>
+            )}
+
+            <button
+              type="button"
+              className="button button-primary full"
+              disabled={code.length < 6 || !accepted || verifying}
+              onClick={() => void verifyCode(code, accepted)}
+            >
+              {copy.enterWorkspace}
+            </button>
+          </div>
         )}
-        <label className="consent">
-          <input
-            type="checkbox"
-            checked={accepted}
-            onChange={(event) => setAccepted(event.target.checked)}
-          />{' '}
-          {copy.agreeConsent}{' '}
-          <button type="button" className="inline-link" onClick={() => setLegalDocument('terms')}>
-            {copy.termsNav}
-          </button>{' '}
-          {copy.andText}{' '}
-          <button type="button" className="inline-link" onClick={() => setLegalDocument('privacy')}>
-            {copy.privacyNav}
-          </button>
-          .
-        </label>
-        <button
-          type="button"
-          className="button button-primary full"
-          disabled={!email || (requested && (!code || !accepted))}
-          onClick={() =>
-            (requested ? verifyCode() : requestCode()).catch((error) =>
-              setStatus(userFacingMessage(error, copy.loginError)),
-            )
-          }
-        >
-          {requested ? copy.enterWorkspace : copy.emailMeCode}
-        </button>
-        {status && <p className="auth-status">{status}</p>}
-        <div className="auth-divider">
-          <span>{copy.orText}</span>
-        </div>
-        <div className="oauth-actions">
-          <a
-            className="button button-ghost"
-            href={apiUrl('/api/auth/google')}
-            onClick={(event) => {
-              event.preventDefault();
-              void startOAuth('google');
-            }}
-          >
-            <GoogleLogo />Google
-          </a>
-          <a
-            className="button button-ghost"
-            href={apiUrl('/api/auth/github')}
-            onClick={(event) => {
-              event.preventDefault();
-              void startOAuth('github');
-            }}
-          >
-            <GitHubLogo />GitHub
-          </a>
-        </div>
+
         <div style={{ marginTop: '24px' }}>
           <LanguageSelector locale={locale} label={copy.language} onChange={handleLocaleChange} />
         </div>

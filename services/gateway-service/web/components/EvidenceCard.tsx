@@ -1,6 +1,7 @@
 import type { ApiClient, Flake, TimelineItem } from '../types';
 import type { Translations } from '../i18n';
 import { userFacingMessage } from '../http';
+import { toast } from '../toast';
 
 export function EvidenceCard({
   selected,
@@ -52,6 +53,7 @@ export function EvidenceCard({
             onClick={() => {
               void navigator.clipboard.writeText(JSON.stringify(selected.evidence, null, 2)).then(() => {
                 setStatus(labels.copied);
+                toast.success(labels.copied, selected.testName);
               });
             }}
           >
@@ -67,8 +69,15 @@ export function EvidenceCard({
             type="button"
             onClick={() =>
               onTimelineLoad()
-                .then(() => setStatus(labels.timelineLoaded))
-                .catch((error) => setStatus(userFacingMessage(error, labels.timelineError)))
+                .then(() => {
+                  setStatus(labels.timelineLoaded);
+                  toast.info(labels.timelineLoaded, selected.testName);
+                })
+                .catch((error) => {
+                  const msg = userFacingMessage(error, labels.timelineError);
+                  setStatus(msg);
+                  toast.error(labels.timelineError, msg);
+                })
             }
           >
             {labels.refresh}

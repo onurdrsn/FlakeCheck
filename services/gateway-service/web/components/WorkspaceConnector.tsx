@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { apiUrl, authHeaders, startOAuth } from '../http';
 import type { Locale } from '../i18n';
 import { translations } from '../i18n';
+import { toast } from '../toast';
 
 type Repository = { fullName: string; visibility: 'public' | 'private'; defaultBranch: string };
 
@@ -29,6 +30,7 @@ export function WorkspaceConnector({ onConnect, locale = 'en' }: { onConnect: (r
     });
     if (!response.ok) {
       setError(copy.connectGithubFirst);
+      toast.warning(copy.github, copy.connectGithubFirst);
       return;
     }
     const data = (await response.json()) as { repositories?: Repository[]; repos?: Repository[] };
