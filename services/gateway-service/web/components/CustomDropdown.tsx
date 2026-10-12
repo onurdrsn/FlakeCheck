@@ -8,20 +8,24 @@ export interface DropdownOption {
 
 export function CustomDropdown({
   id,
+  className = '',
   value,
   placeholder,
   options,
   ariaLabel,
   onChange,
   compact = false,
+  direction = 'down',
 }: {
   id?: string;
+  className?: string;
   value: string;
   placeholder?: string;
   options: DropdownOption[];
   ariaLabel?: string;
   onChange: (value: string) => void;
   compact?: boolean;
+  direction?: 'down' | 'up';
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -51,7 +55,7 @@ export function CustomDropdown({
   return (
     <div
       ref={rootRef}
-      className={`fc-dropdown ${compact ? 'fc-dropdown--compact' : ''} ${open ? 'is-open' : ''}`}
+      className={`fc-dropdown fc-dropdown--${direction} ${compact ? 'fc-dropdown--compact' : ''} ${open ? 'is-open' : ''} ${className}`.trim()}
     >
       <button
         id={id}
