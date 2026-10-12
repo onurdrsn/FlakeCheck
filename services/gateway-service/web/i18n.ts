@@ -141,6 +141,14 @@ export const translations = {
     continueGithub: 'Continue with GitHub',
     connectGithubFirst: 'Connect GitHub first, then return here to choose a repository.',
     ok: 'OK',
+    searchReposPlaceholder: 'Search repositories…',
+    recentRepositories: 'Previously connected repositories',
+    chooseAnotherRepo: 'Add / switch repository',
+    browseGithubRepos: 'Select from GitHub repositories',
+    loadingRepos: 'Loading GitHub repositories…',
+    noReposFound: 'No matching repositories found.',
+    contributorAccessNote: 'Repositories with contributor access · Single selection',
+    singleSelectHint: 'Select one repository to connect to your workspace.',
 
     // Auth & Login Page
     workspaceAccess: 'Workspace access',
@@ -468,6 +476,14 @@ export const translations = {
     continueGithub: 'GitHub ile devam et',
     connectGithubFirst: 'Önce GitHub bağlayın, ardından repository seçmek için buraya dönün.',
     ok: 'Tamam',
+    searchReposPlaceholder: 'Repository ara…',
+    recentRepositories: 'Önceki bağlı repositoryler',
+    chooseAnotherRepo: 'Başka repo seç / ekle',
+    browseGithubRepos: 'GitHub repolarından seç',
+    loadingRepos: 'GitHub repositoryleri yükleniyor…',
+    noReposFound: 'Eşleşen repository bulunamadı.',
+    contributorAccessNote: 'Erişim yetkisi olan repositoryler · Tekli seçim',
+    singleSelectHint: 'Çalışma alanınıza bağlamak için listeden tek bir repository seçin.',
 
     // Auth & Login Page
     workspaceAccess: 'Çalışma alanı erişimi',

@@ -14,6 +14,18 @@ import { apiUrl, authHeaders, friendlyResponseError, setSessionToken, startOAuth
 import { toast } from '../toast';
 
 const WORKSPACE_REPOSITORY_KEY = 'flakecheck.workspace.repository';
+const WORKSPACE_RECENT_REPOS_KEY = 'flakecheck.workspace.recentRepos';
+
+function readStoredRecentRepos(): string[] {
+  try {
+    const raw = window.localStorage.getItem(WORKSPACE_RECENT_REPOS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string' && v.includes('/')) : [];
+  } catch {
+    return [];
+  }
+}
 
 function formatTime(seconds: number) {
   return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
@@ -53,9 +65,18 @@ export function DashboardPage() {
   const [runStatusFilter, setRunStatusFilter] = useState<'all' | 'failed' | 'clean'>('all');
   const [groupRunsByCommit, setGroupRunsByCommit] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth > 768 : true));
+  const [pickerMode, setPickerMode] = useState<'visibility' | 'github' | null>(null);
 
   const [repo, setRepo] = useState(() => window.localStorage.getItem(WORKSPACE_REPOSITORY_KEY) ?? '');
   const [connectedRepo, setConnectedRepo] = useState(() => window.localStorage.getItem(WORKSPACE_REPOSITORY_KEY) ?? '');
+  const [recentRepos, setRecentRepos] = useState<string[]>(() => {
+    const initial = readStoredRecentRepos();
+    const current = window.localStorage.getItem(WORKSPACE_REPOSITORY_KEY)?.trim();
+    if (current && current.includes('/') && !initial.includes(current)) {
+      return [current, ...initial];
+    }
+    return initial;
+  });
   const [isConnecting, setIsConnecting] = useState(false);
   const [token, setToken] = useState('');
   const [query, setQuery] = useState('');
@@ -205,6 +226,21 @@ export function DashboardPage() {
 
   const isConnected = Boolean(summary && repo.trim() && connectedRepo === repo.trim());
 
+  const rememberRecentRepo = (repoName: string, extraList: string[] = []) => {
+    const clean = repoName.trim();
+    setRecentRepos((prev) => {
+      const merged = Array.from(
+        new Set([clean, ...extraList.map((r) => r.trim()), ...prev].filter((r) => r && r.includes('/'))),
+      ).slice(0, 12);
+      try {
+        window.localStorage.setItem(WORKSPACE_RECENT_REPOS_KEY, JSON.stringify(merged));
+      } catch {
+        // ignore storage quota errors
+      }
+      return merged;
+    });
+  };
+
   const handleLocaleChange = (nextLocale: Locale) => {
     setLocale(nextLocale);
     setStoredLocale(nextLocale);
@@ -222,12 +258,17 @@ export function DashboardPage() {
         }
         if (repositoriesResponse.ok) {
           const data = (await repositoriesResponse.json()) as { repositories?: string[] };
-          const serverRepo = data.repositories?.[0];
-          if (serverRepo) {
-            setRepo(serverRepo);
-            setConnectedRepo(serverRepo);
-            window.localStorage.setItem(WORKSPACE_REPOSITORY_KEY, serverRepo);
+          const serverRepos = data.repositories ?? [];
+          const storedRepo = window.localStorage.getItem(WORKSPACE_REPOSITORY_KEY)?.trim();
+          const targetRepo = storedRepo || serverRepos[0];
+          if (targetRepo) {
+            setRepo(targetRepo);
+            setConnectedRepo(targetRepo);
+            window.localStorage.setItem(WORKSPACE_REPOSITORY_KEY, targetRepo);
+            rememberRecentRepo(targetRepo, serverRepos);
             setPendingConnect(true);
+          } else if (serverRepos.length > 0) {
+            rememberRecentRepo('', serverRepos);
           }
         }
       })
@@ -241,7 +282,9 @@ export function DashboardPage() {
     setStatus(copy.connecting);
     void connect(load)
       .then(() => {
-        setConnectedRepo(repo.trim());
+        const clean = repo.trim();
+        setConnectedRepo(clean);
+        rememberRecentRepo(clean);
         setStatus(copy.liveGatewayConnected);
       })
       .catch((error) => {
@@ -333,6 +376,8 @@ export function DashboardPage() {
     try {
       await connect(load);
       setConnectedRepo(normalizedRepo);
+      rememberRecentRepo(normalizedRepo);
+      setPickerMode(null);
       setStatus(copy.liveGatewayConnected);
       toast.success(copy.liveGatewayConnected, normalizedRepo);
     } catch (error) {
@@ -354,6 +399,7 @@ export function DashboardPage() {
     setSummary(null);
     setFlakes([]);
     setSelected(null);
+    setPickerMode('visibility');
     setStatus(copy.disconnected);
     toast.info(copy.disconnected, prevRepo || undefined);
   };
@@ -445,7 +491,7 @@ export function DashboardPage() {
     );
   }
 
-  if (!summary) {
+  if (!summary || pickerMode) {
     return (
       <div className="app-shell">
         <aside className="sidebar connector-sidebar">
@@ -462,7 +508,14 @@ export function DashboardPage() {
           </div>
         </aside>
         <main className="main connector-main">
-          <WorkspaceConnector locale={locale} onConnect={connectWorkspace} />
+          <WorkspaceConnector
+            locale={locale}
+            initialStep={pickerMode ?? 'visibility'}
+            currentRepo={connectedRepo}
+            recentRepos={recentRepos}
+            onCancel={summary && pickerMode ? () => setPickerMode(null) : undefined}
+            onConnect={connectWorkspace}
+          />
         </main>
       </div>
     );
@@ -790,6 +843,7 @@ export function DashboardPage() {
         activeSection={activeSection}
         runsCount={totalRunsCount}
         flakesCount={flakes.length}
+        recentRepos={recentRepos}
         onSectionChange={(sec) => {
           setActiveSection(sec);
           if (typeof window !== 'undefined' && window.innerWidth <= 768) {
@@ -801,6 +855,8 @@ export function DashboardPage() {
         onLocaleChange={handleLocaleChange}
         onConnect={() => void connectWorkspace(repo, token)}
         onDisconnect={disconnectWorkspace}
+        onSwitchRepo={(targetRepo) => void connectWorkspace(targetRepo, '')}
+        onOpenPicker={() => setPickerMode('visibility')}
         onClose={() => setSidebarOpen(false)}
       />
 
@@ -1465,6 +1521,13 @@ export function DashboardPage() {
                     >
                       {isConnecting ? copy.connecting : copy.connect} ↗
                     </button>
+                    <button
+                      type="button"
+                      className="button button-ghost"
+                      onClick={() => setPickerMode('github')}
+                    >
+                      {copy.browseGithubRepos} ↗
+                    </button>
                     {isConnected && (
                       <button
                         type="button"
@@ -1475,6 +1538,28 @@ export function DashboardPage() {
                       </button>
                     )}
                   </div>
+
+                  {recentRepos.length > 0 && (
+                    <div className="recent-repos-box" style={{ marginTop: '14px' }}>
+                      <div className="recent-repos-title">{copy.recentRepositories}</div>
+                      <div className="recent-repos-list">
+                        {recentRepos.map((r) => {
+                          const isCurrent = r === connectedRepo;
+                          return (
+                            <button
+                              key={r}
+                              type="button"
+                              className={`recent-repo-chip ${isCurrent ? 'is-current' : ''}`}
+                              onClick={() => void connectWorkspace(r, '')}
+                            >
+                              <span>{r}</span>
+                              {isCurrent ? <i className="recent-repo-check">✓</i> : <span className="recent-repo-arrow">↗</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="settings-section" style={{ marginTop: '18px' }}>
@@ -1542,7 +1627,20 @@ export function DashboardPage() {
                       {account?.githubConnected ? copy.connected : copy.notConnected}
                     </strong>
                   </div>
-                  {!account?.githubConnected && (
+                  {account?.githubConnected ? (
+                    <button type="button" className="button button-connected full" disabled>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                        <svg className="github-logo" viewBox="0 0 24 24" aria-hidden="true">
+                          <path
+                            fill="currentColor"
+                            d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.61-3.37-1.18-3.37-1.18-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1.01.07 1.54 1.04 1.54 1.04.9 1.54 2.35 1.1 2.92.84.09-.65.35-1.1.63-1.35-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 7.99c.85 0 1.7.11 2.5.34 1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.33 4.69-4.56 4.94.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"
+                          />
+                        </svg>
+                        <span>✓ {copy.connected}</span>
+                      </span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px' }}>GitHub</span>
+                    </button>
+                  ) : (
                     <a
                       className="button button-github full"
                       href={apiUrl('/api/auth/github')}
@@ -1551,6 +1649,12 @@ export function DashboardPage() {
                         void startOAuth('github');
                       }}
                     >
+                      <svg className="github-logo" viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          fill="currentColor"
+                          d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.61-3.37-1.18-3.37-1.18-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1.01.07 1.54 1.04 1.54 1.04.9 1.54 2.35 1.1 2.92.84.09-.65.35-1.1.63-1.35-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 7.99c.85 0 1.7.11 2.5.34 1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.33 4.69-4.56 4.94.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"
+                        />
+                      </svg>
                       <span>{copy.connectGithub}</span>
                       <span>↗</span>
                     </a>
@@ -1678,7 +1782,20 @@ export function DashboardPage() {
                   {account?.githubConnected ? copy.connected : copy.notConnected}
                 </strong>
               </div>
-              {!account?.githubConnected && (
+              {account?.githubConnected ? (
+                <button type="button" className="button button-connected full" disabled>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                    <svg className="github-logo" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        fill="currentColor"
+                        d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.61-3.37-1.18-3.37-1.18-.46-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1.01.07 1.54 1.04 1.54 1.04.9 1.54 2.35 1.1 2.92.84.09-.65.35-1.1.63-1.35-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02A9.56 9.56 0 0 1 12 7.99c.85 0 1.7.11 2.5.34 1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.33 4.69-4.56 4.94.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"
+                      />
+                    </svg>
+                    <span>✓ {copy.connected}</span>
+                  </span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px' }}>GitHub</span>
+                </button>
+              ) : (
                 <a
                   className="button button-github full"
                   href={apiUrl('/api/auth/github')}
