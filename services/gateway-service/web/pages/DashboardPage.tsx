@@ -864,6 +864,7 @@ export function DashboardPage() {
         onSwitchRepo={(targetRepo) => void connectWorkspace(targetRepo, '')}
         onOpenPicker={() => setPickerMode('visibility')}
         onClose={() => setSidebarOpen(false)}
+        onToggle={() => setSidebarOpen((prev) => !prev)}
       />
 
       <main className="main">

@@ -27,6 +27,7 @@ export function Navbar({
   onSwitchRepo,
   onOpenPicker,
   onClose,
+  onToggle,
 }: {
   repo: string;
   token: string;
@@ -49,6 +50,7 @@ export function Navbar({
   onSwitchRepo?: (repo: string) => void;
   onOpenPicker?: () => void;
   onClose?: () => void;
+  onToggle?: () => void;
 }) {
   const navItems: Array<{
     id: DashboardSection;
@@ -114,6 +116,8 @@ export function Navbar({
     },
   ];
 
+  const handleToggle = onToggle ?? onClose;
+
   return (
     <>
       <div
@@ -125,27 +129,32 @@ export function Navbar({
         <div className="sidebar-brand-row">
           <a className="brand" href="/">
             <span className="brand-mark">FC</span>
-            <div>
+            <div className="brand-text">
               <strong>{labels.brandTitle}</strong>
               <small>{labels.brandTagline}</small>
             </div>
           </a>
-          {onClose && (
+          {handleToggle && (
             <button
               type="button"
-              className="sidebar-close-btn"
-              onClick={onClose}
-              aria-label={labels.close}
-              title={labels.close}
+              className="sidebar-toggle-btn"
+              onClick={handleToggle}
+              aria-label="Toggle navigation menu"
+              aria-expanded={isOpen}
+              title={labels.workspace}
             >
-              ✕
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
             </button>
           )}
         </div>
 
         {/* Primary Section Navigation (Snyk Sidebar Style) */}
-        <div>
-          <div className="side-label" style={{ marginBottom: '8px', paddingLeft: '4px' }}>
+        <div className="sidebar-nav-section">
+          <div className="side-label sidebar-section-title" style={{ marginBottom: '8px', paddingLeft: '4px' }}>
             {labels.projectsBreadcrumb}
           </div>
           <nav className="sidebar-nav" aria-label={labels.workspace}>
@@ -153,108 +162,113 @@ export function Navbar({
               <button
                 key={item.id}
                 type="button"
+                title={item.label}
+                aria-label={item.label}
                 className={`sidebar-nav-item ${activeSection === item.id ? 'active' : ''}`}
                 onClick={() => onSectionChange?.(item.id)}
               >
                 <span className="sidebar-nav-item-left">
                   {item.icon}
-                  <span>{item.label}</span>
+                  <span className="sidebar-nav-label">{item.label}</span>
                 </span>
                 {item.badge !== undefined && (
                   <span className="sidebar-nav-badge">{item.badge}</span>
                 )}
               </button>
             ))}
-          <a
-            href="/docs"
-            className="sidebar-nav-item"
-            style={{ textDecoration: 'none' }}
-          >
-            <span className="sidebar-nav-item-left">
-              <svg className="sidebar-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-              </svg>
-              <span>{labels.docsNav}</span>
-            </span>
-            <span className="sidebar-nav-badge">↗</span>
-          </a>
-        </nav>
-      </div>
-
-      {/* Compact Workspace Connection Box */}
-      <div className="sidebar-box">
-        <div className="side-label">{labels.workspace}</div>
-        <label className="field-label" htmlFor="repo">{labels.repository}</label>
-        <input
-          id="repo"
-          className="input"
-          placeholder={labels.repoPlaceholder}
-          value={repo}
-          onChange={(event) => onRepoChange(event.target.value)}
-        />
-        {recentRepos.length > 1 && onSwitchRepo && (
-          <CustomDropdown
-            compact
-            value={recentRepos.includes(repo) ? repo : ''}
-            placeholder={`${labels.recentRepositories}…`}
-            ariaLabel={labels.recentRepositories}
-            options={recentRepos.map((item) => ({
-              value: item,
-              label: item,
-            }))}
-            onChange={(targetRepo) => onSwitchRepo(targetRepo)}
-          />
-        )}
-        <div className="sidebar-actions">
-          {isConnected ? (
-            <div className="connected-group">
-              <button className="button button-connected full" type="button" disabled>
-                <span>✓ {labels.connected}</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px' }}>{repo.split('/')[1] || repo}</span>
-              </button>
-              {onOpenPicker && (
-                <button className="button button-ghost full" type="button" onClick={onOpenPicker}>
-                  <span>{labels.chooseAnotherRepo}</span>
-                  <span>＋</span>
-                </button>
-              )}
-              <button className="button button-disconnect full" type="button" onClick={onDisconnect}>
-                <span>{labels.disconnect}</span>
-                <span>✕</span>
-              </button>
-            </div>
-          ) : (
-            <>
-              <button
-                className="button button-primary full"
-                type="button"
-                disabled={isConnecting || !repo.trim()}
-                onClick={onConnect}
-              >
-                <span>{isConnecting ? labels.connecting : labels.connect}</span>
-                <span>{isConnecting ? '…' : '↗'}</span>
-              </button>
-              {onOpenPicker && (
-                <button className="button button-ghost full" type="button" onClick={onOpenPicker}>
-                  <span>{labels.chooseAnotherRepo}</span>
-                  <span>＋</span>
-                </button>
-              )}
-            </>
-          )}
+            <a
+              href="/docs"
+              title={labels.docsNav}
+              aria-label={labels.docsNav}
+              className="sidebar-nav-item"
+              style={{ textDecoration: 'none' }}
+            >
+              <span className="sidebar-nav-item-left">
+                <svg className="sidebar-nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                </svg>
+                <span className="sidebar-nav-label">{labels.docsNav}</span>
+              </span>
+              <span className="sidebar-nav-badge">↗</span>
+            </a>
+          </nav>
         </div>
-      </div>
 
-      <div style={{ padding: '0 4px' }}>
-        <LanguageSelector locale={locale} label={labels.language} onChange={onLocaleChange} />
-      </div>
+        {/* Compact Workspace Connection Box */}
+        <div className="sidebar-box">
+          <div className="side-label">{labels.workspace}</div>
+          <label className="field-label" htmlFor="repo">{labels.repository}</label>
+          <input
+            id="repo"
+            className="input"
+            placeholder={labels.repoPlaceholder}
+            value={repo}
+            onChange={(event) => onRepoChange(event.target.value)}
+          />
+          {recentRepos.length > 1 && onSwitchRepo && (
+            <CustomDropdown
+              compact
+              value={recentRepos.includes(repo) ? repo : ''}
+              placeholder={`${labels.recentRepositories}…`}
+              ariaLabel={labels.recentRepositories}
+              options={recentRepos.map((item) => ({
+                value: item,
+                label: item,
+              }))}
+              onChange={(targetRepo) => onSwitchRepo(targetRepo)}
+            />
+          )}
+          <div className="sidebar-actions">
+            {isConnected ? (
+              <div className="connected-group">
+                <button className="button button-connected full" type="button" disabled>
+                  <span>✓ {labels.connected}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px' }}>{repo.split('/')[1] || repo}</span>
+                </button>
+                {onOpenPicker && (
+                  <button className="button button-ghost full" type="button" onClick={onOpenPicker}>
+                    <span>{labels.chooseAnotherRepo}</span>
+                    <span>＋</span>
+                  </button>
+                )}
+                <button className="button button-disconnect full" type="button" onClick={onDisconnect}>
+                  <span>{labels.disconnect}</span>
+                  <span>✕</span>
+                </button>
+              </div>
+            ) : (
+              <>
+                <button
+                  className="button button-primary full"
+                  type="button"
+                  disabled={isConnecting || !repo.trim()}
+                  onClick={onConnect}
+                >
+                  <span>{isConnecting ? labels.connecting : labels.connect}</span>
+                  <span>{isConnecting ? '…' : '↗'}</span>
+                </button>
+                {onOpenPicker && (
+                  <button className="button button-ghost full" type="button" onClick={onOpenPicker}>
+                    <span>{labels.chooseAnotherRepo}</span>
+                    <span>＋</span>
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
 
-      <div className="side-footer">
-        <span className="status-dot" /> {labels.gatewayOnline}
-        <small>{status}</small>
-      </div>
-    </aside>
+        <div className="sidebar-lang-wrap" style={{ padding: '0 4px' }}>
+          <LanguageSelector locale={locale} label={labels.language} onChange={onLocaleChange} />
+        </div>
+
+        <div className="side-footer" title={labels.gatewayOnline}>
+          <span className="status-dot" />
+          <span className="side-footer-text">{labels.gatewayOnline}</span>
+          <small className="side-footer-sub">{status}</small>
+        </div>
+      </aside>
     </>
   );
 }

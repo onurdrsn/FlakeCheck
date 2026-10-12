@@ -350,11 +350,62 @@ textarea:focus {
 }
 
 .sidebar.is-collapsed {
-  width: 0;
-  padding-inline: 0;
-  border-right-width: 0;
-  opacity: 0;
-  pointer-events: none;
+  width: 68px;
+  padding: 20px 10px;
+  align-items: center;
+}
+
+.sidebar.is-collapsed .brand,
+.sidebar.is-collapsed .sidebar-section-title,
+.sidebar.is-collapsed .sidebar-nav-label,
+.sidebar.is-collapsed .sidebar-nav-badge,
+.sidebar.is-collapsed .sidebar-box,
+.sidebar.is-collapsed .sidebar-lang-wrap,
+.sidebar.is-collapsed .side-footer-text,
+.sidebar.is-collapsed .side-footer-sub {
+  display: none;
+}
+
+.sidebar.is-collapsed .sidebar-brand-row {
+  justify-content: center;
+  width: 100%;
+  margin: 0 0 6px;
+}
+
+.sidebar.is-collapsed .sidebar-nav-section {
+  width: 100%;
+}
+
+.sidebar.is-collapsed .sidebar-nav {
+  align-items: center;
+}
+
+.sidebar.is-collapsed .sidebar-nav-item {
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+}
+
+.sidebar.is-collapsed .sidebar-nav-item-left {
+  justify-content: center;
+  gap: 0;
+}
+
+.sidebar.is-collapsed .sidebar-nav-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.sidebar.is-collapsed .side-footer {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 14px 0 0;
+}
+
+.sidebar.is-collapsed .side-footer .status-dot {
+  margin-right: 0;
 }
 
 .sidebar-brand-row {
@@ -379,22 +430,22 @@ textarea:focus {
   border-bottom: 1px solid var(--line-subtle);
 }
 
-.sidebar-close-btn {
-  width: 30px;
-  height: 30px;
+.sidebar-toggle-btn {
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--text-secondary);
+  border: 1px solid var(--line-strong);
+  background: var(--panel-elevated);
+  color: var(--text);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
   flex-shrink: 0;
+  cursor: pointer;
   transition: all var(--transition-fast);
 }
 
-.sidebar-close-btn:hover {
+.sidebar-toggle-btn:hover {
   border-color: var(--mint);
   color: var(--mint);
   background: rgba(16, 185, 129, 0.08);
@@ -542,9 +593,9 @@ textarea:focus {
 .main {
   flex: 1;
   min-width: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  max-width: 1680px;
 }
 
 /* Top Breadcrumb & Action Bar */
@@ -571,7 +622,7 @@ textarea:focus {
 }
 
 .sidebar-hamburger-btn {
-  display: inline-flex;
+  display: none;
   align-items: center;
   justify-content: center;
   width: 38px;
@@ -2264,6 +2315,9 @@ textarea:focus {
 @media (max-width: 768px) {
   .app-shell {
     flex-direction: column;
+  }
+  .sidebar-hamburger-btn {
+    display: inline-flex;
   }
   .sidebar-backdrop.is-open {
     display: block;
