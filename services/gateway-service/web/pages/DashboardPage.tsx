@@ -94,6 +94,7 @@ export function DashboardPage() {
   const [loadingRunDetails, setLoadingRunDetails] = useState(false);
   const [runDetailsError, setRunDetailsError] = useState<string | null>(null);
   const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
+  const [pendingDeleteTarget, setPendingDeleteTarget] = useState<'all' | string | string[] | null>(null);
   const [runsPage, setRunsPage] = useState(1);
   const [githubRepoMeta, setGithubRepoMeta] = useState<{ defaultBranch: string | null; latestCommitSha: string | null }>({
     defaultBranch: null,
@@ -185,10 +186,14 @@ export function DashboardPage() {
     }
   };
 
-  const deleteRunHistory = async (target: 'all' | string | string[]) => {
+  const deleteRunHistory = (target: 'all' | string | string[]) => {
+    setPendingDeleteTarget(target);
+  };
+
+  const executeDeleteRunHistory = async () => {
+    if (!pendingDeleteTarget) return;
+    const target = pendingDeleteTarget;
     const isAll = target === 'all';
-    const confirmMsg = isAll ? copy.confirmClearHistory : copy.confirmDeleteRun;
-    if (typeof window !== 'undefined' && !window.confirm(confirmMsg)) return;
     const idParam = isAll ? 'all' : Array.isArray(target) ? target.join(',') : target;
     const trackingKey = isAll ? 'all' : Array.isArray(target) ? target[0] ?? 'all' : target;
     setDeletingRunId(trackingKey);
@@ -221,6 +226,7 @@ export function DashboardPage() {
       toast.error(copy.deleteRunError, msg);
     } finally {
       setDeletingRunId(null);
+      setPendingDeleteTarget(null);
     }
   };
 
@@ -1994,6 +2000,82 @@ export function DashboardPage() {
             setRunDetailsError(null);
           }}
         />
+      )}
+
+      {pendingDeleteTarget !== null && (
+        <div
+          className="modal-backdrop confirm-modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            if (!deletingRunId) setPendingDeleteTarget(null);
+          }}
+        >
+          <div
+            className="modal confirm-delete-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-delete-title"
+            aria-describedby="confirm-delete-desc"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="modal-close account-modal-close"
+              disabled={Boolean(deletingRunId)}
+              onClick={() => setPendingDeleteTarget(null)}
+              aria-label={copy.close}
+            >
+              ×
+            </button>
+            <div className="confirm-delete-modal__icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14ZM10 11v6M14 11v6"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <span className="eyebrow">
+              {pendingDeleteTarget === 'all' ? copy.clearHistory : copy.deleteRun}
+            </span>
+            <h2 id="confirm-delete-title">
+              {pendingDeleteTarget === 'all' ? copy.clearHistory : copy.deleteRun}
+            </h2>
+            <p id="confirm-delete-desc" className="confirm-delete-modal__body">
+              {pendingDeleteTarget === 'all' ? copy.confirmClearHistory : copy.confirmDeleteRun}
+            </p>
+            {repo && (
+              <div className="confirm-delete-modal__repo">
+                <code>{repo}</code>
+              </div>
+            )}
+            <div className="modal-actions confirm-delete-modal__actions">
+              <button
+                type="button"
+                className="button button-ghost"
+                disabled={Boolean(deletingRunId)}
+                onClick={() => setPendingDeleteTarget(null)}
+              >
+                {copy.cancel}
+              </button>
+              <button
+                type="button"
+                className="button button-danger"
+                disabled={Boolean(deletingRunId)}
+                onClick={() => void executeDeleteRunHistory()}
+              >
+                {deletingRunId
+                  ? copy.deletingRun
+                  : pendingDeleteTarget === 'all'
+                    ? copy.clearHistory
+                    : copy.deleteRun}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

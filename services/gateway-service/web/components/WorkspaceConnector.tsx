@@ -3,6 +3,7 @@ import { apiUrl, authHeaders, startOAuth } from '../http';
 import type { Locale } from '../i18n';
 import { translations } from '../i18n';
 import { toast } from '../toast';
+import { CustomDropdown } from './CustomDropdown';
 
 type Repository = { fullName: string; visibility: 'public' | 'private'; defaultBranch?: string };
 
@@ -404,21 +405,16 @@ export function WorkspaceConnector({
             <div className="snyk-picker-actions">
               {selectedRepo && (
                 <div className="snyk-branch-select-wrap">
-                  <label htmlFor="github-branch" className="snyk-branch-label">
-                    Branch:
-                  </label>
-                  <select
+                  <span className="snyk-branch-label">Branch:</span>
+                  <CustomDropdown
                     id="github-branch"
-                    className="input snyk-branch-select"
+                    className="snyk-branch-dropdown"
                     value={branch}
-                    onChange={(event) => setBranch(event.target.value)}
-                  >
-                    {branches.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
+                    options={branches.map((item) => ({ value: item, label: item }))}
+                    onChange={(val) => setBranch(val)}
+                    ariaLabel="Branch"
+                    direction="up"
+                  />
                 </div>
               )}
               <button

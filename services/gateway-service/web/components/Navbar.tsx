@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Locale, Translations } from '../i18n';
+import { CustomDropdown } from './CustomDropdown';
 import { LanguageSelector } from './LanguageSelector';
 
 export type DashboardSection = 'overview' | 'history' | 'flakes' | 'cost' | 'settings';
@@ -193,24 +194,17 @@ export function Navbar({
           onChange={(event) => onRepoChange(event.target.value)}
         />
         {recentRepos.length > 1 && onSwitchRepo && (
-          <select
-            className="input"
-            aria-label={labels.recentRepositories}
+          <CustomDropdown
+            compact
             value={recentRepos.includes(repo) ? repo : ''}
-            onChange={(e) => {
-              if (e.target.value) onSwitchRepo(e.target.value);
-            }}
-            style={{ fontSize: '11.5px', padding: '6px 10px' }}
-          >
-            <option value="" disabled>
-              {labels.recentRepositories}…
-            </option>
-            {recentRepos.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
+            placeholder={`${labels.recentRepositories}…`}
+            ariaLabel={labels.recentRepositories}
+            options={recentRepos.map((item) => ({
+              value: item,
+              label: item,
+            }))}
+            onChange={(targetRepo) => onSwitchRepo(targetRepo)}
+          />
         )}
         <div className="sidebar-actions">
           {isConnected ? (
