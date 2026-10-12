@@ -13,6 +13,7 @@ export function Navbar({
   status,
   isConnected,
   isConnecting,
+  isOpen = true,
   activeSection = 'overview',
   runsCount = 0,
   flakesCount = 0,
@@ -22,6 +23,7 @@ export function Navbar({
   onLocaleChange,
   onConnect,
   onDisconnect,
+  onClose,
 }: {
   repo: string;
   token: string;
@@ -30,6 +32,7 @@ export function Navbar({
   status: string;
   isConnected: boolean;
   isConnecting: boolean;
+  isOpen?: boolean;
   activeSection?: DashboardSection;
   runsCount?: number;
   flakesCount?: number;
@@ -39,6 +42,7 @@ export function Navbar({
   onLocaleChange: (value: Locale) => void;
   onConnect: () => void;
   onDisconnect: () => void;
+  onClose?: () => void;
 }) {
   const navItems: Array<{
     id: DashboardSection;
@@ -105,37 +109,56 @@ export function Navbar({
   ];
 
   return (
-    <aside className="sidebar">
-      <a className="brand" href="/">
-        <span className="brand-mark">FC</span>
-        <div>
-          <strong>{labels.brandTitle}</strong>
-          <small>{labels.brandTagline}</small>
-        </div>
-      </a>
-
-      {/* Primary Section Navigation (Snyk Sidebar Style) */}
-      <div>
-        <div className="side-label" style={{ marginBottom: '8px', paddingLeft: '4px' }}>
-          {labels.projectsBreadcrumb}
-        </div>
-        <nav className="sidebar-nav" aria-label={labels.workspace}>
-          {navItems.map((item) => (
+    <>
+      <div
+        className={`sidebar-backdrop ${isOpen ? 'is-open' : ''}`}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <aside className={`sidebar ${isOpen ? 'is-open' : 'is-collapsed'}`}>
+        <div className="sidebar-brand-row">
+          <a className="brand" href="/">
+            <span className="brand-mark">FC</span>
+            <div>
+              <strong>{labels.brandTitle}</strong>
+              <small>{labels.brandTagline}</small>
+            </div>
+          </a>
+          {onClose && (
             <button
-              key={item.id}
               type="button"
-              className={`sidebar-nav-item ${activeSection === item.id ? 'active' : ''}`}
-              onClick={() => onSectionChange?.(item.id)}
+              className="sidebar-close-btn"
+              onClick={onClose}
+              aria-label={labels.close}
+              title={labels.close}
             >
-              <span className="sidebar-nav-item-left">
-                {item.icon}
-                <span>{item.label}</span>
-              </span>
-              {item.badge !== undefined && (
-                <span className="sidebar-nav-badge">{item.badge}</span>
-              )}
+              ✕
             </button>
-          ))}
+          )}
+        </div>
+
+        {/* Primary Section Navigation (Snyk Sidebar Style) */}
+        <div>
+          <div className="side-label" style={{ marginBottom: '8px', paddingLeft: '4px' }}>
+            {labels.projectsBreadcrumb}
+          </div>
+          <nav className="sidebar-nav" aria-label={labels.workspace}>
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`sidebar-nav-item ${activeSection === item.id ? 'active' : ''}`}
+                onClick={() => onSectionChange?.(item.id)}
+              >
+                <span className="sidebar-nav-item-left">
+                  {item.icon}
+                  <span>{item.label}</span>
+                </span>
+                {item.badge !== undefined && (
+                  <span className="sidebar-nav-badge">{item.badge}</span>
+                )}
+              </button>
+            ))}
           <a
             href="/docs"
             className="sidebar-nav-item"
@@ -216,5 +239,6 @@ export function Navbar({
         <small>{status}</small>
       </div>
     </aside>
+    </>
   );
 }

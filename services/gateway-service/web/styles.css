@@ -323,6 +323,10 @@ textarea:focus {
   background: var(--bg);
 }
 
+.sidebar-backdrop {
+  display: none;
+}
+
 .sidebar {
   width: var(--sidebar-width);
   flex-shrink: 0;
@@ -336,12 +340,64 @@ textarea:focus {
   top: 0;
   height: 100vh;
   overflow-y: auto;
+  overflow-x: hidden;
+  transition:
+    width var(--transition-base),
+    padding var(--transition-base),
+    border-color var(--transition-base),
+    opacity var(--transition-fast),
+    transform var(--transition-base);
+}
+
+.sidebar.is-collapsed {
+  width: 0;
+  padding-inline: 0;
+  border-right-width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 4px 6px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.sidebar-brand-row .brand {
+  margin: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .sidebar .brand {
   margin: 0 4px 6px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--line-subtle);
+}
+
+.sidebar-close-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.sidebar-close-btn:hover {
+  border-color: var(--mint);
+  color: var(--mint);
+  background: rgba(16, 185, 129, 0.08);
 }
 
 /* Primary Section Navigation in Sidebar */
@@ -505,6 +561,35 @@ textarea:focus {
   gap: 16px;
   flex-wrap: wrap;
   margin-bottom: 14px;
+}
+
+.project-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.sidebar-hamburger-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-elevated);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.sidebar-hamburger-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.25);
 }
 
 .breadcrumb-trail {
@@ -2180,7 +2265,39 @@ textarea:focus {
   .app-shell {
     flex-direction: column;
   }
-  .sidebar {
+  .sidebar-backdrop.is-open {
+    display: block;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .sidebar:not(.connector-sidebar) {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(86vw, 290px);
+    height: 100dvh;
+    z-index: 100;
+    border-right: 1px solid var(--line-strong);
+    border-bottom: 0;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.72);
+    transform: translateX(-104%);
+    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease;
+  }
+  .sidebar:not(.connector-sidebar).is-collapsed {
+    width: min(86vw, 290px);
+    padding: 20px 16px;
+    border-right: 1px solid var(--line-strong);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-104%);
+  }
+  .sidebar:not(.connector-sidebar).is-open {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .sidebar.connector-sidebar {
     width: 100%;
     height: auto;
     position: static;

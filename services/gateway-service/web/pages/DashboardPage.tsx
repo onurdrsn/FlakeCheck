@@ -51,6 +51,7 @@ export function DashboardPage() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [runStatusFilter, setRunStatusFilter] = useState<'all' | 'failed' | 'clean'>('all');
   const [groupRunsByCommit, setGroupRunsByCommit] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => (typeof window !== 'undefined' ? window.innerWidth > 768 : true));
 
   const [repo, setRepo] = useState(() => window.localStorage.getItem(WORKSPACE_REPOSITORY_KEY) ?? '');
   const [connectedRepo, setConnectedRepo] = useState(() => window.localStorage.getItem(WORKSPACE_REPOSITORY_KEY) ?? '');
@@ -755,40 +756,62 @@ export function DashboardPage() {
         status={status}
         isConnected={isConnected}
         isConnecting={isConnecting}
+        isOpen={sidebarOpen}
         activeSection={activeSection}
         runsCount={totalRunsCount}
         flakesCount={flakes.length}
-        onSectionChange={setActiveSection}
+        onSectionChange={(sec) => {
+          setActiveSection(sec);
+          if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+            setSidebarOpen(false);
+          }
+        }}
         onRepoChange={setRepo}
         onTokenChange={setToken}
         onLocaleChange={handleLocaleChange}
         onConnect={() => void connectWorkspace(repo, token)}
         onDisconnect={disconnectWorkspace}
+        onClose={() => setSidebarOpen(false)}
       />
 
       <main className="main">
         {/* SNYK-STYLE TOP PROJECT HEADER + HORIZONTAL SECTION TABS */}
         <header className="project-topbar">
           <div className="project-topbar-row">
-            <div>
-              <div className="breadcrumb-trail">
-                <span>{copy.projectsBreadcrumb}</span>
-                <span className="crumb-sep">›</span>
-                <span>{repo.split('/')[0] || copy.workspace}</span>
-                <span className="crumb-sep">›</span>
-                <strong>{repo.split('/')[1] || repo}</strong>
-              </div>
-              <div className="project-title-group">
-                <h1>{repo}</h1>
-                <span className="branch-pill">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="6" y1="3" x2="6" y2="15" />
-                    <circle cx="18" cy="6" r="3" />
-                    <circle cx="6" cy="18" r="3" />
-                    <path d="M18 9a9 9 0 0 1-9 9" />
-                  </svg>
-                  {activeBranch}
-                </span>
+            <div className="project-topbar-left">
+              <button
+                type="button"
+                className="sidebar-hamburger-btn"
+                aria-label="Toggle navigation menu"
+                aria-expanded={sidebarOpen}
+                onClick={() => setSidebarOpen((prev) => !prev)}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
+              </button>
+              <div>
+                <div className="breadcrumb-trail">
+                  <span>{copy.projectsBreadcrumb}</span>
+                  <span className="crumb-sep">›</span>
+                  <span>{repo.split('/')[0] || copy.workspace}</span>
+                  <span className="crumb-sep">›</span>
+                  <strong>{repo.split('/')[1] || repo}</strong>
+                </div>
+                <div className="project-title-group">
+                  <h1>{repo}</h1>
+                  <span className="branch-pill">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="6" y1="3" x2="6" y2="15" />
+                      <circle cx="18" cy="6" r="3" />
+                      <circle cx="6" cy="18" r="3" />
+                      <path d="M18 9a9 9 0 0 1-9 9" />
+                    </svg>
+                    {activeBranch}
+                  </span>
+                </div>
               </div>
             </div>
 
