@@ -13,7 +13,7 @@
     "@neondatabase/serverless": "^0.10.4",
     "@streamparser/json": "^0.0.22",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.7.2",
+    "hono": "^4.13.16",
     "sax-ts": "^1.2.2",
     "@flakecheck/shared-kernel": "workspace:*"
   },
