@@ -122,18 +122,55 @@ export function createV1Router() {
     });
   });
 
-  // Helper to authorize repo-scoped requests (session OR project token)
+  // Helper to authorize repo-scoped requests (session OR project token, with automatic repo inference from token/body)
   async function requireRepoAuth(c: any): Promise<{ repo: string; actorId: string; actorType: 'user' | 'token' } | Response> {
-    const rawRepo = c.req.query('repo') ?? c.req.header('X-FlakeCheck-Repo') ?? '';
-    const repo = canonicalRepo(rawRepo);
-    if (!repo) return c.json({ error: 'Valid repository (owner/name) is required' }, 400);
+    let rawRepo = c.req.query('repo') ?? c.req.header('X-FlakeCheck-Repo') ?? '';
+    if (!rawRepo && c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+      const clonedBody = (await c.req.raw.clone().json().catch(() => null)) as { repo?: unknown } | null;
+      if (typeof clonedBody?.repo === 'string') {
+        rawRepo = clonedBody.repo;
+      }
+    }
+    let repo = canonicalRepo(rawRepo);
+    const projectToken = c.req.header('X-FlakeCheck-Token')?.trim();
+
+    // Check database project_tokens table when X-FlakeCheck-Token is supplied
+    if (projectToken && c.env.DATABASE_URL && c.env.DATABASE_URL !== 'https://example.invalid') {
+      try {
+        const db = createDatabase(c.env.DATABASE_URL);
+        const tokenDigest = await digestHex(projectToken);
+        const rows = await db
+          .select({ id: projectTokens.id, repo: projectTokens.repo, expiresAt: projectTokens.expiresAt, revokedAt: projectTokens.revokedAt })
+          .from(projectTokens)
+          .where(eq(projectTokens.tokenDigest, tokenDigest))
+          .limit(1);
+        const row = rows[0];
+        if (row && !row.revokedAt && (!row.expiresAt || new Date(row.expiresAt).getTime() > Date.now())) {
+          const tokenRepo = canonicalRepo(row.repo);
+          if (!repo && tokenRepo) {
+            repo = tokenRepo;
+          }
+          if (repo && tokenRepo === repo) {
+            return { repo, actorId: row.id, actorType: 'token' };
+          }
+        }
+      } catch {
+        // Fall through to session or env token check
+      }
+    }
+
+    if (!repo) {
+      return c.json(
+        { error: 'Valid repository (owner/name) is required via X-FlakeCheck-Repo header, ?repo= query parameter, or a repository-scoped X-FlakeCheck-Token' },
+        400,
+      );
+    }
 
     const session = await authenticateSession(c.env, extractSessionToken(c));
     if (session) {
       return { repo, actorId: session.userId, actorType: 'user' };
     }
 
-    const projectToken = c.req.header('X-FlakeCheck-Token');
     try {
       const auth = await authenticate(repo, projectToken, c.env);
       return { repo: auth.repo, actorId: 'project-token', actorType: 'token' };
@@ -219,7 +256,8 @@ export function createV1Router() {
   v1.put('/api/v1/quarantine/policy', async (c) => {
     const auth = await requireRepoAuth(c);
     if (auth instanceof Response) return auth;
-    const parsed = QuarantinePolicySchema.safeParse(await c.req.json().catch(() => null));
+    const rawBody = await c.req.json().catch(() => ({}));
+    const parsed = QuarantinePolicySchema.safeParse(rawBody && typeof rawBody === 'object' ? rawBody : {});
     if (!parsed.success) return c.json({ error: 'Invalid policy payload', details: parsed.error.flatten() }, 400);
 
     const db = createDatabase(c.env.DATABASE_URL);
