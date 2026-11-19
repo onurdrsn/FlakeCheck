@@ -314,7 +314,7 @@ export function WorkspaceConnector({
                   className={`snyk-filter-btn ${visibilityFilter === mode ? 'is-active' : ''}`}
                   onClick={() => setVisibilityFilter(mode)}
                 >
-                  {mode === 'all' ? copy.filterAll : mode === 'public' ? 'Public' : 'Private 🔒'}
+                  {mode === 'all' ? (locale === 'tr' ? 'Tümü' : 'All') : mode === 'public' ? 'Public' : 'Private 🔒'}
                 </button>
               ))}
             </div>

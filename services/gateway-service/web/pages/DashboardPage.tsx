@@ -519,7 +519,7 @@ export function DashboardPage() {
             initialStep={pickerMode ?? 'visibility'}
             currentRepo={connectedRepo}
             recentRepos={recentRepos}
-            onCancel={summary && pickerMode ? () => setPickerMode(null) : undefined}
+            {...(summary && pickerMode ? { onCancel: () => setPickerMode(null) } : {})}
             onConnect={connectWorkspace}
           />
         </main>

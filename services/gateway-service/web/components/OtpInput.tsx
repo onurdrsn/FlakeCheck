@@ -366,15 +366,15 @@ export const OtpInput = forwardRef<OtpInputController, OtpInputProps>(function O
     if (!el) return;
     const ctrl = createOtpInput(el, {
       length,
-      ariaGroupLabel,
-      digitLabelPrefix,
-      successMessage,
-      errorMessage,
+      ...(ariaGroupLabel !== undefined ? { ariaGroupLabel } : {}),
+      ...(digitLabelPrefix !== undefined ? { digitLabelPrefix } : {}),
+      ...(successMessage !== undefined ? { successMessage } : {}),
+      ...(errorMessage !== undefined ? { errorMessage } : {}),
       onChange: (code) => callbacksRef.current.onChange?.(code),
       onComplete: (code) => callbacksRef.current.onComplete?.(code),
-      validate: callbacksRef.current.validate
-        ? (code) => callbacksRef.current.validate!(code)
-        : undefined,
+      ...(callbacksRef.current.validate
+        ? { validate: (code: string) => callbacksRef.current.validate!(code) }
+        : {}),
     });
     controllerRef.current = ctrl;
     if (autoFocus) {

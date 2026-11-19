@@ -24,7 +24,7 @@ export function RunDetailsModal({
   defaultBranch?: string;
   defaultCommitSha?: string;
   deletingRunId?: string | null;
-  onDeleteRun?: (target: 'all' | string | string[]) => Promise<void>;
+  onDeleteRun?: (target: 'all' | string | string[]) => void | Promise<void>;
   onClose: () => void;
 }) {
   const [selectedFile, setSelectedFile] = useState<string>('ALL');

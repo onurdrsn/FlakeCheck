@@ -170,7 +170,7 @@ export function show(options: ToastOptions): string {
   card.appendChild(progressTrack);
 
   // Newest toast appears at the top, older toasts push down
-  container.prepend(card);
+  container.insertBefore(card, container.firstChild);
 
   const item: ActiveToast = {
     id,
@@ -204,13 +204,13 @@ export const toast = {
   show,
   dismiss,
   success: (title: string, message?: string, duration?: number) =>
-    show({ type: 'success', title, message, duration }),
+    show({ type: 'success', title, ...(message !== undefined ? { message } : {}), ...(duration !== undefined ? { duration } : {}) }),
   error: (title: string, message?: string, duration?: number) =>
-    show({ type: 'error', title, message, duration }),
+    show({ type: 'error', title, ...(message !== undefined ? { message } : {}), ...(duration !== undefined ? { duration } : {}) }),
   warning: (title: string, message?: string, duration?: number) =>
-    show({ type: 'warning', title, message, duration }),
+    show({ type: 'warning', title, ...(message !== undefined ? { message } : {}), ...(duration !== undefined ? { duration } : {}) }),
   info: (title: string, message?: string, duration?: number) =>
-    show({ type: 'info', title, message, duration }),
+    show({ type: 'info', title, ...(message !== undefined ? { message } : {}), ...(duration !== undefined ? { duration } : {}) }),
 };
 
 if (typeof window !== 'undefined') {
