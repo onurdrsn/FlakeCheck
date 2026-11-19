@@ -22,7 +22,7 @@ export function securityHeadersMiddleware(): MiddlewareHandler {
           "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
           "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
           "font-src 'self' https://fonts.gstatic.com data:",
-          "img-src 'self' data: https:",
+          "img-src 'self' data: blob: https:",
           "connect-src 'self' https://api.github.com https://flakecheck.onurd.com.tr",
           "frame-ancestors 'none'",
           "base-uri 'self'",
