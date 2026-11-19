@@ -2,7 +2,10 @@
   "ci": {
     "collect": {
       "staticDistDir": "./services/gateway-service/public",
-      "numberOfRuns": 1,
+      "numberOfRuns": 3,
+      "settings": {
+        "preset": "desktop"
+      },
       "url": [
         "/",
         "/guides/what-is-a-flaky-test"

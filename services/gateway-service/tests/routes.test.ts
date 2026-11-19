@@ -72,4 +72,50 @@ describe('gateway routes', () => {
       checks: expect.any(Array),
     });
   });
+
+  it('routes unauthenticated POST /api/v1/internal/cron/digest?type=daily to cron handler (401 JSON) and never falls back to ASSETS on /api/* or non-GET', async () => {
+    const services = { ingestion: binding(), analysis: binding(), quarantine: binding() };
+    const assetsFetch = vi.fn(async (req: Request) =>
+      req.method === 'GET' ? new Response('<html>SPA</html>', { status: 200, headers: { 'Content-Type': 'text/html' } }) : new Response(null, { status: 405 }),
+    );
+    const env = {
+      DATABASE_URL: 'https://example.invalid',
+      CRON_SECRET: 'cron_secret_primary_test_token',
+      FLAKECHECK_PROJECT_TOKENS: '{}',
+      INGESTION_SERVICE: services.ingestion,
+      ANALYSIS_SERVICE: services.analysis,
+      QUARANTINE_SERVICE: services.quarantine,
+      ASSETS: { fetch: assetsFetch },
+    };
+    const gateway = new GatewayEntrypoint(env as never, {} as never);
+
+    const cronRes = await gateway.fetch(
+      new Request('https://flakecheck.onurd.com.tr/api/v1/internal/cron/digest?type=daily', { method: 'POST' }),
+    );
+    expect(cronRes.status).toBe(401);
+    expect(cronRes.headers.get('content-type')).toContain('application/json');
+    expect(cronRes.headers.get('www-authenticate')).toContain('Bearer');
+    expect(cronRes.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    expect(assetsFetch).not.toHaveBeenCalled();
+
+    const authedCronRes = await gateway.fetch(
+      new Request('https://flakecheck.onurd.com.tr/api/v1/internal/cron/digest?type=daily', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer cron_secret_primary_test_token' },
+      }),
+    );
+    expect(authedCronRes.status).toBe(202);
+    expect(authedCronRes.headers.get('content-type')).toContain('application/json');
+    expect(authedCronRes.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    expect(assetsFetch).not.toHaveBeenCalled();
+
+    // Unknown non-GET request must return 404 from worker, never 405 from ASSETS
+    const unknownPost = await gateway.fetch(
+      new Request('https://flakecheck.onurd.com.tr/unmatched-post-path', { method: 'POST' }),
+    );
+    expect(unknownPost.status).toBe(404);
+    expect(assetsFetch).not.toHaveBeenCalled();
+  });
 });
+
+

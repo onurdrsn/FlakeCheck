@@ -480,6 +480,34 @@ export function createCronRouter(options: CronRouterOptions = {}) {
     return next();
   });
 
+  const localDevRuns = new Map<string, CronRunRecord>();
+  const localDevStore: CronStore = {
+    async findRun(jobType, periodKey, dryRun) {
+      return localDevRuns.get(`${jobType}:${periodKey}:${dryRun}`) ?? null;
+    },
+    async createRun(run) {
+      const k = `${run.jobType}:${run.periodKey}:${run.dryRun}`;
+      if (localDevRuns.has(k)) return false;
+      localDevRuns.set(k, { ...run });
+      return true;
+    },
+    async updateRun(id, patch) {
+      for (const [k, v] of localDevRuns.entries()) {
+        if (v.id === id) {
+          localDevRuns.set(k, { ...v, ...patch });
+          return;
+        }
+      }
+    },
+  };
+  const localDevExecutors: CronExecutors = {
+    fetchDigestBatch: async () => ({ items: [], nextCursor: null }),
+    sendDigest: async () => 'sent',
+    fetchRetentionBatch: async () => ({ items: [], nextCursor: null }),
+    pruneProject: async () => ({ runsDeleted: 0, deliveriesDeleted: 0 }),
+    recordRetentionAudit: async () => undefined,
+  };
+
   async function acquireAndSchedule(
     c: any,
     jobType: CronJobType,
@@ -488,8 +516,17 @@ export function createCronRouter(options: CronRouterOptions = {}) {
   ): Promise<Response> {
     const now = options.now ? options.now() : new Date();
     const periodKey = computePeriodKey(jobType, now);
-    const store = options.storeFactory ? options.storeFactory(c.env) : createDrizzleCronStore(c.env.DATABASE_URL);
-    const executors = options.executorsFactory ? options.executorsFactory(c.env) : createDrizzleCronExecutors(c.env);
+    const hasRealDb = Boolean(c.env.DATABASE_URL && c.env.DATABASE_URL !== 'https://example.invalid');
+    const store = options.storeFactory
+      ? options.storeFactory(c.env)
+      : hasRealDb
+        ? createDrizzleCronStore(c.env.DATABASE_URL)
+        : localDevStore;
+    const executors = options.executorsFactory
+      ? options.executorsFactory(c.env)
+      : hasRealDb
+        ? createDrizzleCronExecutors(c.env)
+        : localDevExecutors;
 
     const existing = await store.findRun(jobType, periodKey, dryRun);
     if (existing && (existing.status === 'completed' || existing.status === 'running')) {
