@@ -81,7 +81,7 @@ export function RunDetailsModal({
               {labels.runDetailsSubtitle}
             </p>
           </div>
-          {onDeleteRun && details && (
+          {onDeleteRun && details && (runId !== 'all' || (details.runs?.length ?? 0) > 0 || details.attempts.length > 0) && (
             <button
               type="button"
               className="button button-danger"
