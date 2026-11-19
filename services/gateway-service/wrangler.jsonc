@@ -23,28 +23,58 @@
     }
   ],
   "assets": {
-	  "directory": "./public",
-	  "binding": "ASSETS",
-	  "not_found_handling": "single-page-application",
-	  "run_worker_first": ["/api/*", "/health"]
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/",
+      "/api/*",
+      "/health",
+      "/ready",
+      "/guides",
+      "/guides/*",
+      "/compare/*",
+      "/changelog",
+      "/docs/api",
+      "/og/*",
+      "/sitemap.xml",
+      "/robots.txt",
+      "/llms.txt"
+    ]
+  },
+  "env": {
+    "staging": {
+      "name": "flakecheck-gateway-staging",
+      "vars": {
+        "SERVICE_NAME": "gateway-service",
+        "ENVIRONMENT": "staging"
+      }
+    },
+    "production": {
+      "name": "flakecheck-gateway-service",
+      "vars": {
+        "SERVICE_NAME": "gateway-service",
+        "ENVIRONMENT": "production"
+      }
+    }
   },
   "observability": {
-	  "enabled": false,
-	  "head_sampling_rate": 1,
-	  "redact_query_string": false,
-	  "logs": {
-		  "enabled": true,
-		  "head_sampling_rate": 1,
-		  "invocation_logs": true,
-		  "persist": true
-	  },
-	  "traces": {
-		  "enabled": true,
-		  "head_sampling_rate": 1,
-		  "persist": true
-	  },
-	  "issues": {
-		  "enabled": true
-	  }
+    "enabled": false,
+    "head_sampling_rate": 1,
+    "redact_query_string": false,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "persist": true
+    },
+    "issues": {
+      "enabled": true
+    }
   }
 }

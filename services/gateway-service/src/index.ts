@@ -9,6 +9,9 @@ import { authenticateSession, AuthRateLimitError, completeOAuth, consumeOtp, dec
 import { dispatchWebhook } from './webhooks.js';
 import { createDatabase } from './db/client.js';
 import { listFlakes, testTimeline, getRunDetails, deleteRuns } from './db/queries.js';
+import { rateLimitMiddleware, securityHeadersMiddleware } from './security.js';
+import { createV1Router } from './v1-routes.js';
+import { createSeoRouter } from './seo/ssr.js';
 
 type GitHubRepo = { full_name: string; private?: boolean; default_branch?: string };
 const isGitHubRepo = (value: unknown): value is GitHubRepo => Boolean(value && typeof value === 'object' && typeof (value as GitHubRepo).full_name === 'string');
@@ -107,6 +110,10 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       const base = this.env.PUBLIC_APP_URL?.replace(/\/+$/, '');
       return base ? `${base}${path.startsWith('/') ? path : `/${path}`}` : path;
     };
+    app.use('*', securityHeadersMiddleware());
+    app.use('/api/*', rateLimitMiddleware({ windowMs: 60_000, maxRequests: 180 }));
+    app.route('/', createV1Router());
+    app.route('/', createSeoRouter());
     app.use('/api/*', cors({
       origin: (origin, context) => {
         const allowed = (context.env.CORS_ORIGINS ?? context.env.PUBLIC_APP_URL ?? '')
