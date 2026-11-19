@@ -7,8 +7,10 @@ export interface AuthContext {
 }
 
 export function canonicalRepo(value: string | undefined): string | null {
-  if (!value || !/^[^/\s]+\/[^/\s]+$/.test(value)) return null;
-  return value;
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trimmed)) return null;
+  return trimmed;
 }
 
 export async function digest(value: string): Promise<Uint8Array> {

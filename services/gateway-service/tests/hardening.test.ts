@@ -277,13 +277,34 @@ describe('Phase 2 Production Hardening', () => {
           expect(res.status, `${route.method} ${route.path} should require auth`).toBe(401);
         }
 
-        // Authenticated with valid project token + invalid Zod body -> 400
-        const badPolicy = await v1.request('https://flakecheck.onurd.com.tr/api/v1/quarantine/policy?repo=acme/app', {
+        // Authenticated with valid project token (no ?repo= needed) + invalid Zod body -> 400
+        const badPolicy = await v1.request('https://flakecheck.onurd.com.tr/api/v1/quarantine/policy', {
           method: 'PUT',
           headers: { 'X-FlakeCheck-Token': 'secret-token', 'Content-Type': 'application/json' },
           body: JSON.stringify({ flakinessScoreThreshold: 999 }),
         }, env);
         expect(badPolicy.status).toBe(400);
+
+        // Empty body on PUT /api/v1/quarantine/policy must be rejected with 400
+        const emptyPolicy = await v1.request('https://flakecheck.onurd.com.tr/api/v1/quarantine/policy', {
+          method: 'PUT',
+          headers: { 'X-FlakeCheck-Token': 'secret-token', 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }, env);
+        expect(emptyPolicy.status).toBe(400);
+
+        // Explicit repo mismatch against token scope must be rejected with 403
+        const mismatchRepo = await v1.request('https://flakecheck.onurd.com.tr/api/v1/quarantine/policy?repo=other/repo', {
+          method: 'GET',
+          headers: { 'X-FlakeCheck-Token': 'secret-token' },
+        }, env);
+        expect(mismatchRepo.status).toBe(403);
+
+        // Unfilled template variables on badge endpoint must be rejected with 400
+        const unfilledBadge = await v1.request('https://flakecheck.onurd.com.tr/api/v1/badge/%7Bowner%7D/%7Brepo%7D.svg', {
+          method: 'GET',
+        }, env);
+        expect(unfilledBadge.status).toBe(400);
       } finally {
         fetchSpy.mockRestore();
       }

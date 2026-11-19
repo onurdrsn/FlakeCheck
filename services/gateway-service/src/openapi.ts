@@ -1,34 +1,13 @@
 export function buildOpenApiSpec(baseUrl: string) {
   const serverUrl = baseUrl.replace(/\/+$/, '') || 'https://flakecheck.onurd.com.tr';
 
-  const repoParameters = [
-    {
-      name: 'X-FlakeCheck-Repo',
-      in: 'header',
-      required: true,
-      description: 'Target repository in canonical owner/name format.',
-      schema: {
-        type: 'string',
-      },
-    },
-    {
-      name: 'repo',
-      in: 'query',
-      required: false,
-      description: 'Optional query override for target repository in owner/name format.',
-      schema: {
-        type: 'string',
-      },
-    },
-  ];
-
   return {
     openapi: '3.1.0',
     info: {
       title: 'FlakeCheck Public REST API',
       version: '1.0.0',
       description:
-        'Production API for FlakeCheck — statistical flaky test detection, root-cause forensics, automated quarantine policies, CI cost analytics, and issue tracker synchronization.',
+        'Production API for FlakeCheck — statistical flaky test detection, root-cause forensics, automated quarantine policies, CI cost analytics, and issue tracker synchronization. Authenticate with your repository-scoped X-FlakeCheck-Token; the target repository is automatically resolved from the token.',
       contact: {
         name: 'FlakeCheck Engineering',
         url: `${serverUrl}/support`,
@@ -45,16 +24,11 @@ export function buildOpenApiSpec(baseUrl: string) {
           type: 'apiKey',
           in: 'header',
           name: 'X-FlakeCheck-Token',
-          description: 'Repository-scoped API key (SHA-256 hashed at rest).',
-        },
-        SessionAuth: {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT',
+          description: 'Repository-scoped API key (SHA-256 hashed at rest). Automatically identifies the target repository.',
         },
       },
     },
-    security: [{ ProjectToken: [] }, { SessionAuth: [] }],
+    security: [{ ProjectToken: [] }],
     paths: {
       '/health': {
         get: {
@@ -80,13 +54,6 @@ export function buildOpenApiSpec(baseUrl: string) {
           summary: 'Stream a test report (JUnit, CTRF, Jest, Vitest, Playwright, Pytest, Mocha, Go)',
           tags: ['Ingestion'],
           parameters: [
-            {
-              name: 'X-FlakeCheck-Repo',
-              in: 'header',
-              required: true,
-              description: 'Target repository in owner/name format',
-              schema: { type: 'string' },
-            },
             {
               name: 'X-FlakeCheck-Format',
               in: 'header',
@@ -154,8 +121,7 @@ export function buildOpenApiSpec(baseUrl: string) {
         get: {
           summary: 'Analytics overview: trend series, top 10 flakiest tests, CI waste cost, team breakdown',
           tags: ['Analytics'],
-          parameters: repoParameters,
-          responses: { '200': { description: 'Analytics payload' } },
+          responses: { '200': { description: 'Analytics payload for the token repository' } },
         },
       },
       '/api/v1/badge/{owner}/{repo}.svg': {
@@ -188,6 +154,8 @@ export function buildOpenApiSpec(baseUrl: string) {
                 },
               },
             },
+            '400': { description: 'Missing or invalid owner/repo path parameters' },
+            '404': { description: 'Repository not registered in FlakeCheck' },
           },
         },
       },
@@ -195,25 +163,31 @@ export function buildOpenApiSpec(baseUrl: string) {
         get: {
           summary: 'Get repository auto-quarantine policy',
           tags: ['Quarantine'],
-          parameters: repoParameters,
-          responses: { '200': { description: 'Policy config' } },
+          responses: { '200': { description: 'Policy config for the token repository' } },
         },
         put: {
           summary: 'Update repository auto-quarantine policy',
           tags: ['Quarantine'],
-          parameters: repoParameters,
           requestBody: {
-            required: false,
+            required: true,
             content: {
               'application/json': {
                 schema: {
                   type: 'object',
+                  required: [
+                    'enabled',
+                    'flakinessScoreThreshold',
+                    'minFlipCount',
+                    'minSampleSize',
+                    'autoGraduatePasses',
+                    'nonBlockingMode',
+                  ],
                   properties: {
                     enabled: { type: 'boolean' },
                     flakinessScoreThreshold: { type: 'integer', minimum: 1, maximum: 100 },
-                    minFlipCount: { type: 'integer', minimum: 1, maximum: 100 },
-                    minSampleSize: { type: 'integer', minimum: 1, maximum: 500 },
-                    autoGraduatePasses: { type: 'integer', minimum: 1, maximum: 500 },
+                    minFlipCount: { type: 'integer', minimum: 1, maximum: 50 },
+                    minSampleSize: { type: 'integer', minimum: 1, maximum: 200 },
+                    autoGraduatePasses: { type: 'integer', minimum: 1, maximum: 100 },
                     nonBlockingMode: { type: 'boolean' },
                     defaultOwner: { type: 'string' },
                   },
@@ -221,39 +195,45 @@ export function buildOpenApiSpec(baseUrl: string) {
               },
             },
           },
-          responses: { '200': { description: 'Updated policy' } },
+          responses: {
+            '200': { description: 'Updated policy' },
+            '400': { description: 'Missing or invalid required policy fields' },
+          },
         },
       },
       '/api/v1/quarantine/history': {
         get: {
           summary: 'List quarantine audit history (owner, actor, mode, reason)',
           tags: ['Quarantine'],
-          parameters: repoParameters,
-          responses: { '200': { description: 'History entries' } },
+          responses: { '200': { description: 'History entries for the token repository' } },
         },
       },
       '/api/v1/notifications/preferences': {
         get: {
           summary: 'List Slack, Discord, email, and webhook alert preferences',
           tags: ['Notifications'],
-          parameters: repoParameters,
-          responses: { '200': { description: 'Preference list' } },
+          responses: { '200': { description: 'Preference list for the token repository' } },
         },
         post: {
           summary: 'Create or update a notification preference with dedup & rate limit controls',
           tags: ['Notifications'],
-          parameters: repoParameters,
           requestBody: {
             required: true,
             content: {
               'application/json': {
                 schema: {
                   type: 'object',
-                  required: ['channel', 'target'],
+                  required: ['channel', 'target', 'events'],
                   properties: {
                     channel: { type: 'string', enum: ['slack', 'discord', 'email', 'webhook'] },
                     target: { type: 'string' },
-                    events: { type: 'array', items: { type: 'string' } },
+                    events: {
+                      type: 'array',
+                      items: {
+                        type: 'string',
+                        enum: ['PROVEN_FLAKE_DETECTED', 'AUTO_QUARANTINED', 'AUTO_GRADUATED', 'DAILY_DIGEST', 'WEEKLY_DIGEST'],
+                      },
+                    },
                     digestFrequency: { type: 'string', enum: ['realtime', 'daily', 'weekly'] },
                     dedupWindowMinutes: { type: 'integer' },
                     rateLimitPerHour: { type: 'integer' },
@@ -263,7 +243,10 @@ export function buildOpenApiSpec(baseUrl: string) {
               },
             },
           },
-          responses: { '201': { description: 'Saved preference' } },
+          responses: {
+            '201': { description: 'Saved preference' },
+            '400': { description: 'Invalid notification preference payload' },
+          },
         },
       },
       '/api/v1/organizations': {
@@ -290,7 +273,10 @@ export function buildOpenApiSpec(baseUrl: string) {
               },
             },
           },
-          responses: { '201': { description: 'Organization created' } },
+          responses: {
+            '201': { description: 'Organization created' },
+            '400': { description: 'Invalid organization input' },
+          },
         },
       },
       '/api/v1/tokens': {
@@ -303,9 +289,8 @@ export function buildOpenApiSpec(baseUrl: string) {
               'application/json': {
                 schema: {
                   type: 'object',
-                  required: ['repo', 'name'],
+                  required: ['name', 'scopes'],
                   properties: {
-                    repo: { type: 'string' },
                     name: { type: 'string' },
                     scopes: { type: 'array', items: { type: 'string', enum: ['read', 'ingest', 'quarantine', 'admin'] } },
                     expiresInDays: { type: 'integer' },
@@ -314,28 +299,28 @@ export function buildOpenApiSpec(baseUrl: string) {
               },
             },
           },
-          responses: { '201': { description: 'Newly generated API key (shown once)' } },
+          responses: {
+            '201': { description: 'Newly generated API key (shown once)' },
+            '400': { description: 'Invalid API key payload' },
+          },
         },
       },
       '/api/v1/audit-logs': {
         get: {
           summary: 'Retrieve security & governance audit logs for a repository',
           tags: ['Multi-Tenancy & Security'],
-          parameters: repoParameters,
-          responses: { '200': { description: 'Audit log entries' } },
+          responses: { '200': { description: 'Audit log entries for the token repository' } },
         },
       },
       '/api/v1/issue-trackers': {
         get: {
           summary: 'List configured GitHub Issues / Jira / Linear trackers',
           tags: ['Issue Trackers'],
-          parameters: repoParameters,
-          responses: { '200': { description: 'Tracker configs' } },
+          responses: { '200': { description: 'Tracker configs for the token repository' } },
         },
         put: {
           summary: 'Configure GitHub Issues, Jira, or Linear tracker',
           tags: ['Issue Trackers'],
-          parameters: repoParameters,
           requestBody: {
             required: true,
             content: {
@@ -352,7 +337,10 @@ export function buildOpenApiSpec(baseUrl: string) {
               },
             },
           },
-          responses: { '200': { description: 'Saved config' } },
+          responses: {
+            '200': { description: 'Saved config' },
+            '400': { description: 'Invalid issue tracker configuration' },
+          },
         },
       },
       '/api/v1/account/export': {

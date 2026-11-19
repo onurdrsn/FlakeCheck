@@ -59,11 +59,9 @@ function getBaseUrl(env: V1Env, reqUrl: string): string {
   return `${u.protocol}//${u.host}`;
 }
 
-function extractSessionToken(c: { req: { header(name: string): string | undefined } }): string | undefined {
-  const cookieMatch = c.req.header('cookie')?.match(/(?:^|;\s*)flakecheck_session=([^;]+)/)?.[1];
-  if (cookieMatch) return decodeURIComponent(cookieMatch);
+function extractBearerToken(c: { req: { header(name: string): string | undefined } }): string | undefined {
   const auth = c.req.header('Authorization') ?? c.req.header('authorization');
-  if (auth?.startsWith('Bearer ')) return auth.slice(7).trim();
+  if (auth?.startsWith('Bearer ')) return auth.slice(7).trim() || undefined;
   return undefined;
 }
 
@@ -97,10 +95,37 @@ export function createV1Router() {
 
   // 3. Public / Private SVG README Badge Endpoint
   v1.get('/api/v1/badge/:owner/:repoSvg', distributedRateLimit('badge'), async (c) => {
-    const owner = c.req.param('owner');
-    const repoName = c.req.param('repoSvg').replace(/\.svg$/i, '');
+    const owner = (c.req.param('owner') ?? '').trim();
+    const rawRepoSvg = (c.req.param('repoSvg') ?? '').trim();
+    const repoName = rawRepoSvg.replace(/\.svg$/i, '');
+    if (!owner || !repoName || owner.includes('{') || repoName.includes('{') || repoName === '.svg') {
+      return c.json({ error: 'Valid owner and repo path parameters are required' }, 400);
+    }
     const repo = canonicalRepo(`${owner}/${repoName}`);
-    if (!repo) return c.text('Invalid repository', 400);
+    if (!repo) {
+      return c.json({ error: 'Valid owner and repo path parameters are required' }, 400);
+    }
+
+    // If X-FlakeCheck-Token is provided, verify it and ensure it matches the requested badge repo
+    const projectToken = c.req.header('X-FlakeCheck-Token')?.trim();
+    if (projectToken) {
+      const auth = await requireRepoAuth(c);
+      if (auth instanceof Response) return auth;
+      if (auth.repo.toLowerCase() !== repo.toLowerCase()) {
+        return c.json({ error: `X-FlakeCheck-Token is scoped to "${auth.repo}" and cannot read badge for "${repo}"` }, 403);
+      }
+    } else if (c.env.DATABASE_URL && c.env.DATABASE_URL !== 'https://example.invalid') {
+      // Without token, verify the repository actually exists in FlakeCheck
+      const db = createDatabase(c.env.DATABASE_URL);
+      const [tokenRows, runRows, projectRows] = await Promise.all([
+        db.select({ id: projectTokens.id }).from(projectTokens).where(eq(projectTokens.repo, repo)).limit(1),
+        db.select({ id: runs.id }).from(runs).where(eq(runs.repo, repo)).limit(1),
+        db.select({ id: projects.id }).from(projects).where(eq(projects.repo, repo)).limit(1),
+      ]);
+      if (!tokenRows[0] && !runRows[0] && !projectRows[0]) {
+        return c.json({ error: `Repository "${repo}" is not registered in FlakeCheck` }, 404);
+      }
+    }
 
     let healthScore = 100;
     let activeFlakes = 0;
@@ -109,7 +134,7 @@ export function createV1Router() {
       healthScore = summary.healthScore ?? 100;
       activeFlakes = summary.activeFlakes ?? 0;
     } catch {
-      // Fall back to neutral healthy badge when repo has no runs yet
+      // Fall back to neutral healthy badge when registered repo has no runs yet
     }
 
     const svg = renderFlakeBadgeSvg({ repo, healthScore, activeFlakes });
@@ -122,61 +147,133 @@ export function createV1Router() {
     });
   });
 
-  // Helper to authorize repo-scoped requests (session OR project token, with automatic repo inference from token/body)
-  async function requireRepoAuth(c: any): Promise<{ repo: string; actorId: string; actorType: 'user' | 'token' } | Response> {
-    let rawRepo = c.req.query('repo') ?? c.req.header('X-FlakeCheck-Repo') ?? '';
-    if (!rawRepo && c.req.method !== 'GET' && c.req.method !== 'HEAD') {
-      const clonedBody = (await c.req.raw.clone().json().catch(() => null)) as { repo?: unknown } | null;
-      if (typeof clonedBody?.repo === 'string') {
-        rawRepo = clonedBody.repo;
-      }
+  // Helper to authorize repo-scoped requests strictly via X-FlakeCheck-Token (or explicit Bearer header, never ambient browser cookies)
+  async function requireRepoAuth(
+    c: any,
+  ): Promise<{ repo: string; actorId: string; userId: string | null; actorType: 'user' | 'token' } | Response> {
+    const rawRepo = (c.req.query('repo') ?? c.req.header('X-FlakeCheck-Repo') ?? '').trim();
+    const explicitRepo = rawRepo ? canonicalRepo(rawRepo) : null;
+    if (rawRepo && !explicitRepo) {
+      return c.json({ error: 'Invalid repository format (expected owner/name)' }, 400);
     }
-    let repo = canonicalRepo(rawRepo);
-    const projectToken = c.req.header('X-FlakeCheck-Token')?.trim();
 
-    // Check database project_tokens table when X-FlakeCheck-Token is supplied
-    if (projectToken && c.env.DATABASE_URL && c.env.DATABASE_URL !== 'https://example.invalid') {
-      try {
-        const db = createDatabase(c.env.DATABASE_URL);
-        const tokenDigest = await digestHex(projectToken);
-        const rows = await db
-          .select({ id: projectTokens.id, repo: projectTokens.repo, expiresAt: projectTokens.expiresAt, revokedAt: projectTokens.revokedAt })
-          .from(projectTokens)
-          .where(eq(projectTokens.tokenDigest, tokenDigest))
-          .limit(1);
-        const row = rows[0];
-        if (row && !row.revokedAt && (!row.expiresAt || new Date(row.expiresAt).getTime() > Date.now())) {
-          const tokenRepo = canonicalRepo(row.repo);
-          if (!repo && tokenRepo) {
-            repo = tokenRepo;
+    const projectToken = c.req.header('X-FlakeCheck-Token')?.trim();
+    if (projectToken) {
+      const tokenDigest = await digestHex(projectToken);
+
+      // 1. Check PostgreSQL project_tokens table
+      if (c.env.DATABASE_URL && c.env.DATABASE_URL !== 'https://example.invalid') {
+        try {
+          const db = createDatabase(c.env.DATABASE_URL);
+          const rows = await db
+            .select({
+              id: projectTokens.id,
+              repo: projectTokens.repo,
+              createdBy: projectTokens.createdBy,
+              expiresAt: projectTokens.expiresAt,
+              revokedAt: projectTokens.revokedAt,
+            })
+            .from(projectTokens)
+            .where(eq(projectTokens.tokenDigest, tokenDigest))
+            .limit(1);
+          const row = rows[0];
+          if (row) {
+            if (row.revokedAt || (row.expiresAt && new Date(row.expiresAt).getTime() <= Date.now())) {
+              return c.json({ error: 'X-FlakeCheck-Token has been revoked or expired' }, 401);
+            }
+            const tokenRepo = canonicalRepo(row.repo);
+            if (!tokenRepo) {
+              return c.json({ error: 'Token is not bound to a valid repository' }, 401);
+            }
+            if (explicitRepo && explicitRepo !== tokenRepo) {
+              return c.json({ error: `X-FlakeCheck-Token is scoped to "${tokenRepo}" and cannot access "${explicitRepo}"` }, 403);
+            }
+            return { repo: tokenRepo, actorId: row.id, userId: row.createdBy, actorType: 'token' };
           }
-          if (repo && tokenRepo === repo) {
-            return { repo, actorId: row.id, actorType: 'token' };
+        } catch {
+          // Fall through to static env token map check
+        }
+      }
+
+      // 2. Check FLAKECHECK_PROJECT_TOKENS static JSON map ({ "owner/repo": "<sha256_digest>" })
+      try {
+        const tokenMap = JSON.parse(c.env.FLAKECHECK_PROJECT_TOKENS || '{}') as Record<string, string>;
+        for (const [mapRepo, mapDigest] of Object.entries(tokenMap)) {
+          if (mapDigest === tokenDigest) {
+            const tokenRepo = canonicalRepo(mapRepo);
+            if (tokenRepo) {
+              if (explicitRepo && explicitRepo !== tokenRepo) {
+                return c.json({ error: `X-FlakeCheck-Token is scoped to "${tokenRepo}" and cannot access "${explicitRepo}"` }, 403);
+              }
+              return { repo: tokenRepo, actorId: 'project-token', userId: null, actorType: 'token' };
+            }
           }
         }
       } catch {
-        // Fall through to session or env token check
+        // Ignore malformed env JSON
       }
+
+      return c.json({ error: 'Invalid X-FlakeCheck-Token' }, 401);
     }
 
-    if (!repo) {
-      return c.json(
-        { error: 'Valid repository (owner/name) is required via X-FlakeCheck-Repo header, ?repo= query parameter, or a repository-scoped X-FlakeCheck-Token' },
-        400,
-      );
+    // 3. Explicit Authorization: Bearer <jwt> header (never ambient cookies)
+    const bearerToken = extractBearerToken(c);
+    if (bearerToken) {
+      const session = await authenticateSession(c.env, bearerToken);
+      if (!session) {
+        return c.json({ error: 'Invalid or expired Bearer token' }, 401);
+      }
+      if (!explicitRepo) {
+        return c.json({ error: 'Repository (owner/name) is required when authenticating with a user Bearer token' }, 400);
+      }
+      return { repo: explicitRepo, actorId: session.userId, userId: session.userId, actorType: 'user' };
     }
 
-    const session = await authenticateSession(c.env, extractSessionToken(c));
-    if (session) {
-      return { repo, actorId: session.userId, actorType: 'user' };
+    return c.json({ error: 'Authentication required: provide a valid X-FlakeCheck-Token header' }, 401);
+  }
+
+  // Helper for user/account/org endpoints that accepts either X-FlakeCheck-Token (using token creator userId) or explicit Bearer JWT
+  async function requireAccountOrTokenAuth(
+    c: any,
+  ): Promise<{ userId: string; repo: string | null; actorType: 'user' | 'token' } | Response> {
+    const projectToken = c.req.header('X-FlakeCheck-Token')?.trim();
+    if (projectToken) {
+      if (c.env.DATABASE_URL && c.env.DATABASE_URL !== 'https://example.invalid') {
+        try {
+          const db = createDatabase(c.env.DATABASE_URL);
+          const tokenDigest = await digestHex(projectToken);
+          const rows = await db
+            .select({
+              id: projectTokens.id,
+              repo: projectTokens.repo,
+              createdBy: projectTokens.createdBy,
+              expiresAt: projectTokens.expiresAt,
+              revokedAt: projectTokens.revokedAt,
+            })
+            .from(projectTokens)
+            .where(eq(projectTokens.tokenDigest, tokenDigest))
+            .limit(1);
+          const row = rows[0];
+          if (row && !row.revokedAt && (!row.expiresAt || new Date(row.expiresAt).getTime() > Date.now()) && row.createdBy) {
+            return { userId: row.createdBy, repo: canonicalRepo(row.repo) ?? null, actorType: 'token' };
+          }
+        } catch {
+          // Fall through
+        }
+      }
+      return c.json({ error: 'Invalid or expired X-FlakeCheck-Token' }, 401);
     }
 
-    try {
-      const auth = await authenticate(repo, projectToken, c.env);
-      return { repo: auth.repo, actorId: 'project-token', actorType: 'token' };
-    } catch {
-      return c.json({ error: 'Authentication required' }, 401);
+    const bearerToken = extractBearerToken(c);
+    if (bearerToken) {
+      const session = await authenticateSession(c.env, bearerToken);
+      if (session) {
+        return { userId: session.userId, repo: null, actorType: 'user' };
+      }
+      return c.json({ error: 'Invalid or expired Bearer token' }, 401);
     }
+
+    return c.json({ error: 'Authentication required: provide a valid X-FlakeCheck-Token header' }, 401);
   }
 
   // 4. Analytics Overview (Trends, Top 10 Flakiest Tests, CI Cost, Team Breakdown, Badge Markdown)
@@ -256,8 +353,8 @@ export function createV1Router() {
   v1.put('/api/v1/quarantine/policy', async (c) => {
     const auth = await requireRepoAuth(c);
     if (auth instanceof Response) return auth;
-    const rawBody = await c.req.json().catch(() => ({}));
-    const parsed = QuarantinePolicySchema.safeParse(rawBody && typeof rawBody === 'object' ? rawBody : {});
+    const rawBody = await c.req.json().catch(() => null);
+    const parsed = QuarantinePolicySchema.safeParse(rawBody);
     if (!parsed.success) return c.json({ error: 'Invalid policy payload', details: parsed.error.flatten() }, 400);
 
     const db = createDatabase(c.env.DATABASE_URL);
@@ -327,7 +424,7 @@ export function createV1Router() {
     await db.insert(notificationPreferences).values({
       id,
       repo: auth.repo,
-      userId: auth.actorType === 'user' ? auth.actorId : null,
+      userId: auth.userId,
       channel: parsed.data.channel,
       target: parsed.data.target,
       signingSecret: parsed.data.signingSecret ?? null,
@@ -346,13 +443,13 @@ export function createV1Router() {
       resourceId: id,
       metadata: { channel: parsed.data.channel, digestFrequency: parsed.data.digestFrequency },
     });
-    return c.json({ ok: true, id }, 201);
+    return c.json({ ok: true, id, repo: auth.repo }, 201);
   });
 
   // 7. Multi-Tenancy: Organizations, Scoped API Keys, Audit Logs
   v1.get('/api/v1/organizations', async (c) => {
-    const session = await authenticateSession(c.env, extractSessionToken(c));
-    if (!session) return c.json({ error: 'Authentication required' }, 401);
+    const auth = await requireAccountOrTokenAuth(c);
+    if (auth instanceof Response) return auth;
     const db = createDatabase(c.env.DATABASE_URL);
     const rows = await db
       .select({
@@ -364,24 +461,24 @@ export function createV1Router() {
       })
       .from(organizationMembers)
       .innerJoin(organizations, eq(organizationMembers.orgId, organizations.id))
-      .where(eq(organizationMembers.userId, session.userId));
+      .where(eq(organizationMembers.userId, auth.userId));
     return c.json({ items: rows });
   });
 
   v1.post('/api/v1/organizations', async (c) => {
-    const session = await authenticateSession(c.env, extractSessionToken(c));
-    if (!session) return c.json({ error: 'Authentication required' }, 401);
+    const auth = await requireAccountOrTokenAuth(c);
+    if (auth instanceof Response) return auth;
     const parsed = OrganizationCreateSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid organization input', details: parsed.error.flatten() }, 400);
 
     const db = createDatabase(c.env.DATABASE_URL);
     const orgId = crypto.randomUUID();
-    await db.insert(organizations).values({ id: orgId, slug: parsed.data.slug, name: parsed.data.name, createdBy: session.userId });
-    await db.insert(organizationMembers).values({ id: crypto.randomUUID(), orgId, userId: session.userId, role: 'owner' });
+    await db.insert(organizations).values({ id: orgId, slug: parsed.data.slug, name: parsed.data.name, createdBy: auth.userId });
+    await db.insert(organizationMembers).values({ id: crypto.randomUUID(), orgId, userId: auth.userId, role: 'owner' });
     await recordAuditLog(db, {
       orgId,
-      actorId: session.userId,
-      actorType: 'user',
+      actorId: auth.userId,
+      actorType: auth.actorType,
       action: 'organization.created',
       resourceType: 'organization',
       resourceId: orgId,
@@ -391,10 +488,18 @@ export function createV1Router() {
   });
 
   v1.post('/api/v1/tokens', async (c) => {
-    const session = await authenticateSession(c.env, extractSessionToken(c));
-    if (!session) return c.json({ error: 'Authentication required' }, 401);
+    const auth = await requireAccountOrTokenAuth(c);
+    if (auth instanceof Response) return auth;
     const parsed = ApiKeyCreateSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'Invalid API key payload', details: parsed.error.flatten() }, 400);
+
+    const targetRepo = parsed.data.repo ? canonicalRepo(parsed.data.repo) : auth.repo;
+    if (!targetRepo) {
+      return c.json({ error: 'Repository (owner/name) could not be determined' }, 400);
+    }
+    if (auth.repo && targetRepo !== auth.repo) {
+      return c.json({ error: `X-FlakeCheck-Token is scoped to "${auth.repo}" and cannot issue tokens for "${targetRepo}"` }, 403);
+    }
 
     const rawBytes = new Uint8Array(24);
     crypto.getRandomValues(rawBytes);
@@ -408,23 +513,23 @@ export function createV1Router() {
     const id = crypto.randomUUID();
     await db.insert(projectTokens).values({
       id,
-      repo: parsed.data.repo,
+      repo: targetRepo,
       name: parsed.data.name,
       tokenDigest: digest,
       scopes: parsed.data.scopes,
-      createdBy: session.userId,
+      createdBy: auth.userId,
       expiresAt,
     });
     await recordAuditLog(db, {
-      repo: parsed.data.repo,
-      actorId: session.userId,
-      actorType: 'user',
+      repo: targetRepo,
+      actorId: auth.userId,
+      actorType: auth.actorType,
       action: 'api_key.created',
       resourceType: 'project_token',
       resourceId: id,
       metadata: { name: parsed.data.name, scopes: parsed.data.scopes, expiresAt },
     });
-    return c.json({ id, repo: parsed.data.repo, name: parsed.data.name, scopes: parsed.data.scopes, expiresAt, token: rawToken }, 201);
+    return c.json({ id, repo: targetRepo, name: parsed.data.name, scopes: parsed.data.scopes, expiresAt, token: rawToken }, 201);
   });
 
   v1.get('/api/v1/audit-logs', async (c) => {
@@ -622,13 +727,13 @@ export function createV1Router() {
 
   // 10. GDPR / KVKK Portable Account Data Export
   v1.get('/api/v1/account/export', async (c) => {
-    const session = await authenticateSession(c.env, extractSessionToken(c));
-    if (!session) return c.json({ error: 'Authentication required' }, 401);
+    const auth = await requireAccountOrTokenAuth(c);
+    if (auth instanceof Response) return auth;
     const db = createDatabase(c.env.DATABASE_URL);
     const [userRow, memberships, logs] = await Promise.all([
-      db.select({ id: users.id, email: users.email, displayName: users.displayName, locale: users.locale, createdAt: users.createdAt }).from(users).where(eq(users.id, session.userId)).limit(1),
-      db.select().from(organizationMembers).where(eq(organizationMembers.userId, session.userId)),
-      db.select().from(auditLogs).where(eq(auditLogs.actorId, session.userId)).orderBy(desc(auditLogs.createdAt)).limit(200),
+      db.select({ id: users.id, email: users.email, displayName: users.displayName, locale: users.locale, createdAt: users.createdAt }).from(users).where(eq(users.id, auth.userId)).limit(1),
+      db.select().from(organizationMembers).where(eq(organizationMembers.userId, auth.userId)),
+      db.select().from(auditLogs).where(eq(auditLogs.actorId, auth.userId)).orderBy(desc(auditLogs.createdAt)).limit(200),
     ]);
     return c.json({
       exportedAt: new Date().toISOString(),

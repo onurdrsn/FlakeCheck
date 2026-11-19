@@ -381,8 +381,45 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       try {
         const url = new URL(context.req.url);
         const body = context.req.method === 'GET' ? undefined : await context.req.raw.clone().json().catch(() => undefined) as Record<string, unknown> | undefined;
-        const repo = String(body?.repo ?? url.searchParams.get('repo') ?? context.req.header('x-flakecheck-repo') ?? '');
-        let auth;
+        let repo = String(body?.repo ?? url.searchParams.get('repo') ?? context.req.header('x-flakecheck-repo') ?? '').trim();
+        const suppliedToken = context.req.header('X-FlakeCheck-Token')?.trim();
+        let auth: { repo: string } | undefined;
+
+        if (suppliedToken) {
+          const tokenDigest = await digestHex(suppliedToken);
+          if (context.env.DATABASE_URL && context.env.DATABASE_URL !== 'https://example.invalid') {
+            const rows = await createDatabase(context.env.DATABASE_URL)
+              .select({ id: projectTokens.id, repo: projectTokens.repo })
+              .from(projectTokens)
+              .where(and(eq(projectTokens.tokenDigest, tokenDigest), isNull(projectTokens.revokedAt)))
+              .limit(1);
+            if (rows[0]) {
+              const tokenRepo = canonicalRepo(rows[0].repo);
+              if (tokenRepo) {
+                if (repo && canonicalRepo(repo) !== tokenRepo) {
+                  return context.json({ error: `X-FlakeCheck-Token is scoped to "${tokenRepo}"` }, 403);
+                }
+                repo = tokenRepo;
+                auth = { repo: tokenRepo };
+              }
+            }
+          }
+          if (!auth) {
+            if (!repo) {
+              try {
+                const tokenMap = JSON.parse(context.env.FLAKECHECK_PROJECT_TOKENS || '{}') as Record<string, string>;
+                for (const [mapRepo, mapDigest] of Object.entries(tokenMap)) {
+                  if (mapDigest === tokenDigest && canonicalRepo(mapRepo)) {
+                    repo = canonicalRepo(mapRepo)!;
+                    break;
+                  }
+                }
+              } catch {}
+            }
+            auth = await authenticate(repo, suppliedToken, context.env);
+          }
+        }
+
         const sessionToken = extractSessionToken(context);
         const session = await authenticateSession(context.env, sessionToken);
         let githubAccessToken: string | undefined;
@@ -396,24 +433,19 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
             }
           }
         }
-        try {
-          auth = await authenticate(repo, context.req.header('X-FlakeCheck-Token'), context.env, githubAccessToken);
-        } catch (error) {
-          const suppliedToken = context.req.header('X-FlakeCheck-Token');
-          const canonical = canonicalRepo(repo);
-          if (!canonical) throw error;
-          const matches = suppliedToken
-            ? await createDatabase(context.env.DATABASE_URL).select({ id: projectTokens.id }).from(projectTokens).where(and(eq(projectTokens.repo, canonical), eq(projectTokens.tokenDigest, await digestHex(suppliedToken)), isNull(projectTokens.revokedAt))).limit(1)
-            : [];
-          if (!matches[0]) {
-            if (!session) throw error;
+
+        if (!auth) {
+          try {
+            auth = await authenticate(repo, undefined, context.env, githubAccessToken);
+          } catch (error) {
+            const canonical = canonicalRepo(repo);
+            if (!canonical || !session) throw error;
             const access = await createDatabase(context.env.DATABASE_URL).select({ id: repositoryAccess.id }).from(repositoryAccess).where(and(eq(repositoryAccess.userId, session.userId), eq(repositoryAccess.repo, canonical))).limit(1);
             if (!access[0]) throw error;
             auth = { repo: canonical };
-          } else {
-            auth = { repo: canonical };
           }
         }
+
         if (session && auth) {
           await createDatabase(context.env.DATABASE_URL).insert(repositoryAccess).values({ id: crypto.randomUUID(), userId: session.userId, repo: auth.repo }).onConflictDoNothing();
         }

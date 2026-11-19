@@ -180,17 +180,18 @@ export const QuarantineActionSchema = z.object({
 });
 
 export const QuarantinePolicySchema = z.object({
-  enabled: z.boolean().default(true),
-  flakinessScoreThreshold: z.number().int().min(1).max(100).default(60),
-  minFlipCount: z.number().int().min(1).max(50).default(2),
-  minSampleSize: z.number().int().min(1).max(200).default(5),
-  autoGraduatePasses: z.number().int().min(1).max(100).default(10),
-  nonBlockingMode: z.boolean().default(true),
+  enabled: z.boolean(),
+  flakinessScoreThreshold: z.number().int().min(1).max(100),
+  minFlipCount: z.number().int().min(1).max(50),
+  minSampleSize: z.number().int().min(1).max(200),
+  autoGraduatePasses: z.number().int().min(1).max(100),
+  nonBlockingMode: z.boolean(),
+  defaultOwner: z.string().trim().min(1).max(120).optional(),
 });
 
 export const NotificationPreferenceSchema = z.object({
   channel: z.enum(['slack', 'discord', 'email', 'webhook']),
-  target: z.string().min(3).max(500),
+  target: z.string().trim().min(3).max(500),
   signingSecret: z.string().min(8).max(256).optional(),
   events: z.array(z.enum(['PROVEN_FLAKE_DETECTED', 'AUTO_QUARANTINED', 'AUTO_GRADUATED', 'DAILY_DIGEST', 'WEEKLY_DIGEST'])).min(1),
   digestFrequency: z.enum(['realtime', 'daily', 'weekly']).default('realtime'),
@@ -205,16 +206,18 @@ export const OrganizationCreateSchema = z.object({
 });
 
 export const ApiKeyCreateSchema = z.object({
-  repo: RepoSchema,
-  name: z.string().trim().min(1).max(64).default('ci-token'),
-  scopes: z.array(z.enum(['read', 'ingest', 'quarantine', 'admin'])).min(1).default(['ingest', 'read']),
+  repo: RepoSchema.optional(),
+  name: z.string().trim().min(1).max(64),
+  scopes: z.array(z.enum(['read', 'ingest', 'quarantine', 'admin'])).min(1),
   expiresInDays: z.number().int().min(1).max(365).optional(),
 });
 
 export const IssueTrackerConfigSchema = z.object({
   provider: z.enum(['github', 'jira', 'linear']),
   enabled: z.boolean().default(true),
-  config: z.record(z.string(), z.unknown()),
+  config: z.record(z.string(), z.unknown()).refine((val) => Object.keys(val).length > 0, {
+    message: 'config object must contain at least one key',
+  }),
 });
 
 export const CiWebhookSchema = z.object({
