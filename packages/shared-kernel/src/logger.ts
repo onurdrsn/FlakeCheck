@@ -1,7 +1,7 @@
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-const SENSITIVE_KEY_PATTERN = /(token|secret|password|authorization|cookie|api[_-]?key|access[_-]?token|refresh[_-]?token|private[_-]?key|database[_-]?url|dsn)/i;
-const SENSITIVE_VALUE_PATTERN = /(Bearer\s+[A-Za-z0-9._~+/-]+=*|gh[pousr]_[A-Za-z0-9]{20,}|fc_[A-Za-z0-9_-]{16,}|postgres(?:ql)?:\/\/[^\s"']+)/gi;
+const SENSITIVE_KEY_PATTERN = /(token|secret|password|authorization|cookie|api[_-]?key|access[_-]?token|refresh[_-]?token|private[_-]?key|database[_-]?url|dsn|cron[_-]?secret|cronjob[_-]?api[_-]?key)/i;
+const SENSITIVE_VALUE_PATTERN = /(Bearer\s+[A-Za-z0-9._~+/-]+=*|gh[pousr]_[A-Za-z0-9]{20,}|fc_[A-Za-z0-9_-]{16,}|cron_[A-Za-z0-9_-]{12,}|postgres(?:ql)?:\/\/[^\s"']+)/gi;
 
 export function redactValue(value: unknown, depth = 0): unknown {
   if (depth > 6) return '[TRUNCATED]';

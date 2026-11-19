@@ -320,3 +320,22 @@ export const ingestIdempotency = pgTable('ingest_idempotency', {
   index('ingest_idempotency_repo_idx').on(table.repo),
   index('ingest_idempotency_created_idx').on(table.createdAt),
 ]);
+
+export const cronRuns = pgTable('cron_runs', {
+  id: text('id').primaryKey(),
+  jobType: text('job_type').notNull(),
+  periodKey: text('period_key').notNull(),
+  status: text('status').default('running').notNull(),
+  dryRun: boolean('dry_run').default(false).notNull(),
+  cursor: text('cursor'),
+  processedCount: integer('processed_count').default(0).notNull(),
+  affectedCount: integer('affected_count').default(0).notNull(),
+  errorCount: integer('error_count').default(0).notNull(),
+  errorMessage: text('error_message'),
+  startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
+}, (table) => [
+  uniqueIndex('cron_runs_job_period_dry_idx').on(table.jobType, table.periodKey, table.dryRun),
+  index('cron_runs_status_idx').on(table.status),
+  index('cron_runs_started_idx').on(table.startedAt),
+]);
