@@ -17,6 +17,13 @@ export async function writeClassifications(db: { insert(table: typeof classifica
       runId: value.runId,
       category: value.category,
       confidence: value.confidence,
+      flakinessScore: value.flakinessScore,
+      flipRateBps: value.flipRateBps,
+      confidenceLowBps: value.confidenceLowBps,
+      confidenceHighBps: value.confidenceHighBps,
+      sampleSize: value.sampleSize,
+      rootCause: value.rootCause,
+      remediation: value.remediation,
       evidence: value.evidence,
     }))).onConflictDoNothing();
     persisted += result.rowCount ?? 0;

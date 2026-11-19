@@ -33,11 +33,20 @@ export interface AnalysisSnapshot {
   readonly attempts: readonly AttemptSnapshot[];
 }
 
+import type { RootCauseCategory } from './root-cause.js';
+
 export interface Classification {
   testId: string;
   runId: string;
   category: ClassificationCategory;
   confidence: number;
+  flakinessScore: number;
+  flipRateBps: number;
+  confidenceLowBps: number;
+  confidenceHighBps: number;
+  sampleSize: number;
+  rootCause: RootCauseCategory;
+  remediation: string;
   evidence: Record<string, unknown>;
 }
 

@@ -1,4 +1,6 @@
 import type { AnalysisSnapshot, AttemptSnapshot, Classification, ClassificationCategory, RunSnapshot } from './model.js';
+import { computeFlakinessScore, type ScoringConfig } from './scoring.js';
+import { classifyRootCause } from './root-cause.js';
 
 export const CLASSIFICATION_PRECEDENCE: readonly ClassificationCategory[] = [
   'PROVEN_FLAKE', 'ENVIRONMENT_SENSITIVE', 'INFRASTRUCTURE_FAILURE',
@@ -27,9 +29,49 @@ function categoryEvidence(category: ClassificationCategory, attempts: AttemptSna
   return { category, runIds: runs.map((run) => run.id), attemptIds: attempts.map((attempt) => attempt.id), ...extra };
 }
 
-export function classifyTest(snapshot: AnalysisSnapshot, testId: string, targetRunId: string): Classification {
+export function classifyTest(
+  snapshot: AnalysisSnapshot,
+  testId: string,
+  targetRunId: string,
+  scoringConfig?: Partial<ScoringConfig>,
+): Classification {
   const attempts = attemptsFor(snapshot, testId);
   const historyRuns = runsFor(snapshot, testId);
+  const stats = computeFlakinessScore(attempts, historyRuns, scoringConfig);
+  const rc = classifyRootCause(attempts, historyRuns);
+
+  const enrich = (
+    category: ClassificationCategory,
+    confidence: number,
+    evidence: Record<string, unknown>,
+  ): Classification => ({
+    testId,
+    runId: targetRunId,
+    category,
+    confidence,
+    flakinessScore: stats.flakinessScore,
+    flipRateBps: Math.round(stats.flipRate * 10000),
+    confidenceLowBps: Math.round(stats.confidenceInterval.low * 10000),
+    confidenceHighBps: Math.round(stats.confidenceInterval.high * 10000),
+    sampleSize: stats.sampleSize,
+    rootCause: rc.rootCause,
+    remediation: rc.remediation,
+    evidence: {
+      ...evidence,
+      flakinessScore: stats.flakinessScore,
+      flipRate: stats.flipRate,
+      rerunFlakeRate: stats.rerunFlakeRate,
+      passCount: stats.passCount,
+      failCount: stats.failCount,
+      sampleSize: stats.sampleSize,
+      confidenceInterval: stats.confidenceInterval,
+      rootCause: rc.rootCause,
+      rootCauseRuleId: rc.ruleId,
+      rootCauseEvidence: rc.matchedEvidence,
+      remediation: rc.remediation,
+    },
+  });
+
   const byRun = new Map(historyRuns.map((run) => [run.id, attempts.filter((attempt) => attempt.runId === run.id)]));
   const sameCommitEnvironment = new Map<string, AttemptSnapshot[]>();
   for (const run of historyRuns) {
@@ -38,7 +80,7 @@ export function classifyTest(snapshot: AnalysisSnapshot, testId: string, targetR
   }
   const provenGroup = [...sameCommitEnvironment.entries()].find(([, group]) => group.some(failed) && group.some((attempt) => attempt.status === 'PASSED'));
   if (provenGroup) {
-    return { testId, runId: targetRunId, category: 'PROVEN_FLAKE', confidence: 100, evidence: categoryEvidence('PROVEN_FLAKE', provenGroup[1], historyRuns, { commitEnvironment: provenGroup[0] }) };
+    return enrich('PROVEN_FLAKE', 100, categoryEvidence('PROVEN_FLAKE', provenGroup[1], historyRuns, { commitEnvironment: provenGroup[0] }));
   }
 
   const byCommit = new Map<string, RunSnapshot[]>();
@@ -51,7 +93,7 @@ export function classifyTest(snapshot: AnalysisSnapshot, testId: string, targetR
       && groups.some((group) => group.length > 0 && group.every(failed));
   });
   if (environmentSensitive) {
-    return { testId, runId: targetRunId, category: 'ENVIRONMENT_SENSITIVE', confidence: 90, evidence: categoryEvidence('ENVIRONMENT_SENSITIVE', attempts, historyRuns, { commitSha: environmentSensitive[0] }) };
+    return enrich('ENVIRONMENT_SENSITIVE', 90, categoryEvidence('ENVIRONMENT_SENSITIVE', attempts, historyRuns, { commitSha: environmentSensitive[0] }));
   }
 
   const targetAttempts = attempts.filter((attempt) => attempt.runId === targetRunId);
@@ -60,7 +102,7 @@ export function classifyTest(snapshot: AnalysisSnapshot, testId: string, targetR
   const suiteAttempts = targetRun ? snapshot.attempts.filter((attempt) => attempt.runId === targetRun.id) : [];
   const infraRatio = suiteAttempts.length ? suiteAttempts.filter(infrastructure).length / suiteAttempts.length : 0;
   if (infraAttempts.length > 0 || infraRatio >= 0.3) {
-    return { testId, runId: targetRunId, category: 'INFRASTRUCTURE_FAILURE', confidence: 95, evidence: categoryEvidence('INFRASTRUCTURE_FAILURE', infraAttempts.length ? infraAttempts : suiteAttempts, historyRuns, { infraRatio }) };
+    return enrich('INFRASTRUCTURE_FAILURE', 95, categoryEvidence('INFRASTRUCTURE_FAILURE', infraAttempts.length ? infraAttempts : suiteAttempts, historyRuns, { infraRatio }));
   }
 
   const latest = historyRuns[historyRuns.length - 1];
@@ -69,12 +111,12 @@ export function classifyTest(snapshot: AnalysisSnapshot, testId: string, targetR
   const latestFailed = latest ? (byRun.get(latest.id) ?? []).some(failed) : false;
   const retriedFailed = latest ? (byRun.get(latest.id) ?? []).filter((attempt) => attempt.attemptNumber > 1).every(failed) : false;
   if (earlierPassed && latest?.codeDiff && latestFailed && retriedFailed) {
-    return { testId, runId: targetRunId, category: 'REGRESSION', confidence: 85, evidence: categoryEvidence('REGRESSION', attempts, historyRuns, { priorPassedRuns: 5 }) };
+    return enrich('REGRESSION', 85, categoryEvidence('REGRESSION', attempts, historyRuns, { priorPassedRuns: 5 }));
   }
 
   const lastThree = historyRuns.slice(-3);
   if (lastThree.length >= 3 && new Set(lastThree.map((run) => run.commitSha)).size >= 2 && lastThree.every((run) => (byRun.get(run.id) ?? []).length > 0 && (byRun.get(run.id) ?? []).every(failed))) {
-    return { testId, runId: targetRunId, category: 'STABLE_FAILURE', confidence: 90, evidence: categoryEvidence('STABLE_FAILURE', attempts, lastThree, { commits: lastThree.map((run) => run.commitSha) }) };
+    return enrich('STABLE_FAILURE', 90, categoryEvidence('STABLE_FAILURE', attempts, lastThree, { commits: lastThree.map((run) => run.commitSha) }));
   }
 
   const transitions = historyRuns.slice(1).map((run, index) => {
@@ -85,16 +127,20 @@ export function classifyTest(snapshot: AnalysisSnapshot, testId: string, targetR
   const flipCount = transitions.filter((item) => item.flip && !item.changed).length;
   const flipRate = transitions.length ? flipCount / transitions.length : 0;
   if (flipRate >= 0.15) {
-    return { testId, runId: targetRunId, category: 'SUSPECTED_FLAKE', confidence: Math.min(100, flipCount * 25), evidence: categoryEvidence('SUSPECTED_FLAKE', attempts, historyRuns, { flipCount, flipRate }) };
+    return enrich('SUSPECTED_FLAKE', Math.min(100, flipCount * 25), categoryEvidence('SUSPECTED_FLAKE', attempts, historyRuns, { flipCount, flipRate }));
   }
 
   if (historyRuns.length < 3) {
-    return { testId, runId: targetRunId, category: 'INSUFFICIENT_DATA', confidence: 0, evidence: categoryEvidence('INSUFFICIENT_DATA', attempts, historyRuns, { historicalRuns: historyRuns.length }) };
+    return enrich('INSUFFICIENT_DATA', 0, categoryEvidence('INSUFFICIENT_DATA', attempts, historyRuns, { historicalRuns: historyRuns.length }));
   }
-  return { testId, runId: targetRunId, category: 'STABLE_FAILURE', confidence: 90, evidence: categoryEvidence('STABLE_FAILURE', attempts, historyRuns, { fallback: true }) };
+  return enrich('STABLE_FAILURE', 90, categoryEvidence('STABLE_FAILURE', attempts, historyRuns, { fallback: true }));
 }
 
-export function classifySnapshot(snapshot: AnalysisSnapshot, targetRunId: string): Classification[] {
+export function classifySnapshot(
+  snapshot: AnalysisSnapshot,
+  targetRunId: string,
+  scoringConfig?: Partial<ScoringConfig>,
+): Classification[] {
   return [...new Set(snapshot.attempts.map((attempt) => attempt.testId))]
-    .map((testId) => classifyTest(snapshot, testId, targetRunId));
+    .map((testId) => classifyTest(snapshot, testId, targetRunId, scoringConfig));
 }
