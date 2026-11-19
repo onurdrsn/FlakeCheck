@@ -35,8 +35,9 @@ import {
   OrganizationCreateSchema,
   QuarantinePolicySchema,
   recordAuditLog,
-  verifyHmacSignature,
+  verifyWebhookRequest,
 } from './security.js';
+import { distributedRateLimit } from './rate-limit.js';
 import { openTrackerIssue, postGitHubPrComment, setGitHubCommitStatus } from './integrations.js';
 
 export interface V1Env {
@@ -95,7 +96,7 @@ export function createV1Router() {
   v1.get('/api/v1/ready', readyHandler);
 
   // 3. Public / Private SVG README Badge Endpoint
-  v1.get('/api/v1/badge/:owner/:repoSvg', async (c) => {
+  v1.get('/api/v1/badge/:owner/:repoSvg', distributedRateLimit('badge'), async (c) => {
     const owner = c.req.param('owner');
     const repoName = c.req.param('repoSvg').replace(/\.svg$/i, '');
     const repo = canonicalRepo(`${owner}/${repoName}`);
@@ -490,12 +491,18 @@ export function createV1Router() {
   });
 
   // 9. Authenticated & Idempotent CI Webhook Ingestion + GitHub PR Comment & Commit Status
-  v1.post('/api/v1/webhooks/ci', async (c) => {
+  v1.post('/api/v1/webhooks/ci', distributedRateLimit('ingest'), async (c) => {
     const rawBody = await c.req.text();
     const sigHeader = c.req.header('X-FlakeCheck-Signature') ?? c.req.header('X-Hub-Signature-256') ?? '';
+    const tsHeader = c.req.header('X-FlakeCheck-Timestamp') ?? c.req.header('X-Webhook-Timestamp');
     if (c.env.CI_WEBHOOK_SECRET) {
-      const valid = await verifyHmacSignature(c.env.CI_WEBHOOK_SECRET, rawBody, sigHeader);
-      if (!valid) return c.json({ error: 'Invalid webhook signature' }, 401);
+      const check = await verifyWebhookRequest({
+        secret: c.env.CI_WEBHOOK_SECRET,
+        rawBody,
+        signatureHeader: sigHeader,
+        timestampHeader: tsHeader,
+      });
+      if (!check.valid) return c.json({ error: check.reason ?? 'Invalid webhook signature' }, 401);
     }
 
     let jsonBody: unknown;

@@ -9,18 +9,26 @@ import { authenticateSession, AuthRateLimitError, completeOAuth, consumeOtp, dec
 import { dispatchWebhook } from './webhooks.js';
 import { createDatabase } from './db/client.js';
 import { listFlakes, testTimeline, getRunDetails, deleteRuns } from './db/queries.js';
-import { rateLimitMiddleware, securityHeadersMiddleware } from './security.js';
+import { securityHeadersMiddleware } from './security.js';
+import { distributedRateLimit, RateLimiterDO, type RateLimitEnv } from './rate-limit.js';
+import { createCronRouter } from './cron.js';
 import { createV1Router } from './v1-routes.js';
 import { createSeoRouter } from './seo/ssr.js';
+
+export { RateLimiterDO };
 
 type GitHubRepo = { full_name: string; private?: boolean; default_branch?: string };
 const isGitHubRepo = (value: unknown): value is GitHubRepo => Boolean(value && typeof value === 'object' && typeof (value as GitHubRepo).full_name === 'string');
 const isBranchObj = (value: unknown): value is { name: string } => Boolean(value && typeof value === 'object' && typeof (value as { name?: unknown }).name === 'string');
 
-export interface Env {
+export interface Env extends RateLimitEnv {
   DATABASE_URL: string;
   FLAKECHECK_PROJECT_TOKENS: string;
   JWT_SECRET: string;
+  CRON_SECRET?: string;
+  CRON_SECRET_PREVIOUS?: string;
+  CI_WEBHOOK_SECRET?: string;
+  GITHUB_TOKEN?: string;
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
   GOOGLE_CLIENT_ID?: string;
@@ -111,7 +119,10 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       return base ? `${base}${path.startsWith('/') ? path : `/${path}`}` : path;
     };
     app.use('*', securityHeadersMiddleware());
-    app.use('/api/*', rateLimitMiddleware({ windowMs: 60_000, maxRequests: 180 }));
+    app.route('/', createCronRouter());
+    app.use('/api/auth/*', distributedRateLimit('auth'));
+    app.use('/api/ingest', distributedRateLimit('ingest'));
+    app.use('/api/*', distributedRateLimit('api'));
     app.route('/', createV1Router());
     app.route('/', createSeoRouter());
     app.use('/api/*', cors({

@@ -99,8 +99,20 @@ export function rateLimitMiddleware(options: { windowMs?: number; maxRequests?: 
 }
 
 // ---------------------------------------------------------------------------
-// 3. Web Crypto HMAC-SHA256 Signature Verification (Workers-native)
+// 3. Web Crypto Timing-Safe Comparison & HMAC-SHA256 Replay Protection
 // ---------------------------------------------------------------------------
+export function timingSafeEqualStrings(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const aBytes = enc.encode(a);
+  const bBytes = enc.encode(b);
+  const maxLen = Math.max(aBytes.length, bBytes.length);
+  let diff = aBytes.length ^ bBytes.length;
+  for (let i = 0; i < maxLen; i += 1) {
+    diff |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
+  }
+  return diff === 0;
+}
+
 export async function computeHmacSha256Hex(secret: string, payload: string): Promise<string> {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
@@ -118,12 +130,40 @@ export async function verifyHmacSignature(secret: string, payload: string, signa
   if (!secret || !signatureHeader) return false;
   const expected = await computeHmacSha256Hex(secret, payload);
   const provided = signatureHeader.replace(/^sha256=/i, '').trim().toLowerCase();
-  if (expected.length !== provided.length) return false;
-  let diff = 0;
-  for (let i = 0; i < expected.length; i += 1) {
-    diff |= expected.charCodeAt(i) ^ provided.charCodeAt(i);
+  return timingSafeEqualStrings(expected, provided);
+}
+
+export async function verifyWebhookRequest(options: {
+  secret: string;
+  rawBody: string;
+  signatureHeader: string;
+  timestampHeader?: string | undefined;
+  toleranceSeconds?: number;
+  nowMs?: number;
+}): Promise<{ valid: boolean; reason?: string }> {
+  const toleranceSeconds = options.toleranceSeconds ?? 300;
+  const nowMs = options.nowMs ?? Date.now();
+
+  if (options.timestampHeader) {
+    const rawTs = options.timestampHeader.trim();
+    const parsedEpochSec = /^\d+$/.test(rawTs)
+      ? Number.parseInt(rawTs, 10)
+      : Math.floor(Date.parse(rawTs) / 1000);
+    if (!Number.isFinite(parsedEpochSec) || Number.isNaN(parsedEpochSec)) {
+      return { valid: false, reason: 'Invalid webhook timestamp header' };
+    }
+    const skewSec = Math.abs(Math.floor(nowMs / 1000) - parsedEpochSec);
+    if (skewSec > toleranceSeconds) {
+      return { valid: false, reason: `Webhook timestamp outside ${toleranceSeconds}s replay tolerance` };
+    }
+    // Accept signature computed over `${timestamp}.${rawBody}` or rawBody
+    const signedWithTs = await verifyHmacSignature(options.secret, `${rawTs}.${options.rawBody}`, options.signatureHeader);
+    if (signedWithTs) return { valid: true };
   }
-  return diff === 0;
+
+  const signedRaw = await verifyHmacSignature(options.secret, options.rawBody, options.signatureHeader);
+  if (signedRaw) return { valid: true };
+  return { valid: false, reason: 'Invalid webhook HMAC signature' };
 }
 
 // ---------------------------------------------------------------------------

@@ -7,7 +7,29 @@
   "alias": {
     "@flakecheck/shared-kernel": "../../packages/shared-kernel/src/index.ts"
   },
-  "vars": { "SERVICE_NAME": "gateway-service" },
+  "vars": {
+    "SERVICE_NAME": "gateway-service",
+    "RATE_LIMIT_WINDOW_MS": "60000",
+    "RATE_LIMIT_AUTH_MAX": "20",
+    "RATE_LIMIT_INGEST_MAX": "120",
+    "RATE_LIMIT_BADGE_MAX": "300",
+    "RATE_LIMIT_CRON_MAX": "10",
+    "RATE_LIMIT_API_MAX": "180"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "RATE_LIMITER_DO",
+        "class_name": "RateLimiterDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1-rate-limiter-do",
+      "new_sqlite_classes": ["RateLimiterDO"]
+    }
+  ],
   "services": [
     {
 	    "binding": "INGESTION_SERVICE",
