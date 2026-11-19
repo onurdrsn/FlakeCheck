@@ -1,10 +1,11 @@
 {
   "ci": {
     "collect": {
+      "staticDistDir": "./services/gateway-service/public",
       "numberOfRuns": 1,
       "url": [
-        "https://flakecheck.onurd.com.tr/",
-        "https://flakecheck.onurd.com.tr/guides/what-is-a-flaky-test"
+        "/",
+        "/guides/what-is-a-flaky-test"
       ]
     },
     "assert": {

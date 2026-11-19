@@ -37,8 +37,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.5.2
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Run Lighthouse CI against production
+          cache: pnpm
+      - name: Install dependencies & build static SEO output
+        run: pnpm install --frozen-lockfile && pnpm --filter @flakecheck/shared-kernel build && pnpm --filter @flakecheck/gateway-service build:web
+      - name: Run Lighthouse CI against built SEO pages
         run: npx --yes @lhci/cli@0.14.x autorun --config=.lighthouserc.json

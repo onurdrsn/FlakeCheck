@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Go Flaky Tests: Race Detector &amp; CI | FlakeCheck</title>
+    <meta name="description" content="Detect Go flaky tests with go test -json, -race, and -count. Stream Go test JSON directly to FlakeCheck for flakiness scoring." />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
+    <link rel="canonical" href="https://flakecheck.onurd.com.tr/guides/go-flaky-tests" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="theme-color" content="#070a0f" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="FlakeCheck" />
+    <meta property="og:url" content="https://flakecheck.onurd.com.tr/guides/go-flaky-tests" />
+    <meta property="og:title" content="Go Flaky Tests: Race Detector &amp; CI | FlakeCheck" />
+    <meta property="og:description" content="Detect Go flaky tests with go test -json, -race, and -count. Stream Go test JSON directly to FlakeCheck for flakiness scoring." />
+    <meta property="og:image" content="https://flakecheck.onurd.com.tr/og/go-flaky-tests.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Go Flaky Tests: Race Detector &amp; CI | FlakeCheck" />
+    <meta name="twitter:description" content="Detect Go flaky tests with go test -json, -race, and -count. Stream Go test JSON directly to FlakeCheck for flakiness scoring." />
+    <meta name="twitter:image" content="https://flakecheck.onurd.com.tr/og/go-flaky-tests.svg" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"Go Flaky Tests: Concurrency Races, Goroutine Leaks, and Detection","description":"Detect Go flaky tests with go test -json, -race, and -count. Stream Go test JSON directly to FlakeCheck for flakiness scoring.","datePublished":"2026-10-18","dateModified":"2026-11-19","author":{"@type":"Organization","name":"FlakeCheck"},"publisher":{"@type":"Organization","name":"FlakeCheck","logo":{"@type":"ImageObject","url":"https://flakecheck.onurd.com.tr/favicon.svg"}},"mainEntityOfPage":"https://flakecheck.onurd.com.tr/guides/go-flaky-tests"}</script>
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://flakecheck.onurd.com.tr/"},{"@type":"ListItem","position":2,"name":"Guides","item":"https://flakecheck.onurd.com.tr/guides"},{"@type":"ListItem","position":3,"name":"Go Flaky Tests: Concurrency Races, Goroutine Leaks, and Detection","item":"https://flakecheck.onurd.com.tr/guides/go-flaky-tests"}]}</script>
+    <style>
+      :root{--bg:#070a0f;--panel:#0e131d;--panel2:#131a27;--line:rgba(255,255,255,.09);--text:#f1f5f9;--muted:#94a3b8;--mint:#34d399;--mint2:#10b981;--mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;--sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+      *{box-sizing:border-box}
+      body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.65;-webkit-font-smoothing:antialiased}
+      a{color:var(--mint);text-decoration:none}
+      a:hover{text-decoration:underline}
+      .skip-link{position:absolute;left:-9999px;top:0;background:var(--mint);color:#04120c;padding:8px 14px;font-weight:700;z-index:100}
+      .skip-link:focus{left:12px;top:12px;border-radius:6px}
+      .nav{position:sticky;top:0;z-index:40;background:rgba(7,10,15,.88);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+      .nav-inner{max-width:1160px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+      .brand{display:inline-flex;align-items:center;gap:10px;color:var(--text);font-weight:800;font-size:16px;letter-spacing:-.02em}
+      .brand-mark{display:grid;place-items:center;width:32px;height:32px;border-radius:8px;border:1px solid var(--mint);background:rgba(16,185,129,.15);color:var(--mint);font:700 12px var(--mono)}
+      .nav-links{display:flex;align-items:center;gap:18px;flex-wrap:wrap;font-size:14px}
+      .nav-links a{color:var(--muted);font-weight:500}
+      .nav-links a:hover{color:var(--text)}
+      .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:9px;font-weight:600;font-size:14px;border:1px solid var(--line);background:var(--panel2);color:var(--text);transition:transform .15s,border-color .15s}
+      .btn:hover{border-color:var(--mint);text-decoration:none;transform:translateY(-1px)}
+      .btn-primary{background:linear-gradient(135deg,#34d399,#10b981);color:#052016;border-color:#34d399;font-weight:700}
+      .wrap{max-width:1160px;margin:0 auto;padding:48px 24px}
+      .article-wrap{max-width:860px;margin:0 auto;padding:44px 24px}
+      h1{font-size:clamp(2rem,4vw,3.1rem);line-height:1.15;letter-spacing:-.03em;margin:0 0 18px;color:#fff}
+      h2{font-size:clamp(1.35rem,2.4vw,1.8rem);line-height:1.25;letter-spacing:-.02em;margin:36px 0 12px;color:#fff}
+      h3{font-size:1.05rem;margin:0 0 8px;color:#fff}
+      p{color:var(--muted);margin:0 0 16px}
+      .lead{font-size:1.12rem;color:#cbd5e1;max-width:70ch}
+      .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;font:600 12px var(--mono);color:var(--mint);background:rgba(16,185,129,.12);border:1px solid rgba(52,211,153,.3);margin-bottom:16px}
+      .grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:24px}
+      .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+      .card:hover{border-color:rgba(52,211,153,.35)}
+      pre{background:#0b1018;border:1px solid var(--line);border-radius:10px;padding:16px;overflow-x:auto;font:13px/1.6 var(--mono);color:#e2e8f0;margin:18px 0}
+      code{font-family:var(--mono);font-size:.9em}
+      .breadcrumb{display:flex;gap:8px;font-size:13px;color:var(--muted);margin-bottom:18px;flex-wrap:wrap}
+      .faq-item{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:12px}
+      .footer{border-top:1px solid var(--line);margin-top:64px;padding:36px 24px;color:var(--muted);font-size:13px}
+      .footer-inner{max-width:1160px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:24px}
+      .footer ul{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:6px}
+      .cta-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px}
+      @media (max-width:640px){.wrap,.article-wrap{padding:28px 16px}}
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="nav">
+      <div class="nav-inner">
+        <a class="brand" href="/"><span class="brand-mark">FC</span><span>FlakeCheck</span></a>
+        <nav class="nav-links" aria-label="Primary navigation">
+          <a href="/guides">Guides</a>
+          <a href="/docs">Docs</a>
+          <a href="/docs/api">API</a>
+          <a href="/compare/flakecheck-vs-buildpulse">Compare</a>
+          <a href="/changelog">Changelog</a>
+          <a href="/status">Status</a>
+          <a class="btn btn-primary" href="/login">Open Dashboard</a>
+        </nav>
+      </div>
+    </header>
+    <main id="main-content">
+      
+  <article class="article-wrap">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="/">Home</a><span>/</span>
+      <a href="/guides">Guides</a><span>/</span>
+      <span>Framework Guides</span>
+    </nav>
+    <span class="pill">FRAMEWORK GUIDES · 6 MIN READ</span>
+    <h1>Go Flaky Tests: Concurrency Races, Goroutine Leaks, and Detection</h1>
+    <p class="lead">Detect Go flaky tests with go test -json, -race, and -count. Stream Go test JSON directly to FlakeCheck for flakiness scoring.</p>
+    
+      <h2>Native Go Test JSON Streaming</h2>
+      <p>Go tests frequently flake due to goroutine scheduling races, map iteration order assumptions, time.Sleep synchronization, or port collisions. FlakeCheck natively parses streaming go test -json output.</p>
+      <pre><code class="language-bash">go test -race -json ./... &gt; go-test.json
+npx @onurdrsn/flakecheck ingest go-test.json --format go</code></pre>
+      <h2>Stress-Testing Suspected Flakes</h2>
+      <p>Use go test -count=20 -race ./pkg/... to reproduce timing bugs locally and verify fixes before graduating a quarantined test.</p>
+      
+    
+    <div class="card" style="margin-top:32px">
+      <h3>Eliminate flaky tests automatically with FlakeCheck</h3>
+      <p>Stream your JUnit, CTRF, Jest, Vitest, Playwright, Pytest, Mocha, or Go reports to FlakeCheck and get statistical scoring + auto-quarantine in minutes.</p>
+      <div class="cta-row"><a class="btn btn-primary" href="/login">Launch FlakeCheck</a><a class="btn" href="/docs/api">API Docs</a></div>
+    </div>
+    <h2>Related Guides</h2><div class="grid-3"><a class="card" href="/guides/what-is-a-flaky-test"><h3>What Is a Flaky Test? Causes, Impact, and How to Eliminate Test Flakiness</h3><p>Learn what a flaky test is, why flaky tests break CI velocity, how to measure test flakiness, and how FlakeCheck quarantines unstable tests.</p></a><a class="card" href="/guides/how-to-detect-flaky-tests"><h3>How to Detect Flaky Tests Automatically in CI/CD Pipelines</h3><p>Step-by-step guide to flaky test detection using rerun tracking, flip-rate statistics, Wilson confidence intervals, JUnit XML, and CTRF.</p></a><a class="card" href="/guides/how-to-fix-flaky-tests"><h3>How to Fix Flaky Tests: Root Causes, Code Patterns, and Prevention</h3><p>Actionable engineering playbook on how to fix flaky tests across timing races, shared state, network calls, concurrency, and test order.</p></a></div>
+  </article>
+    </main>
+    <footer class="footer">
+      <div class="footer-inner">
+        <div>
+          <strong style="color:#fff">FlakeCheck</strong>
+          <p style="margin-top:8px">Edge-native flaky test detection, root-cause forensics, and automated quarantine for modern CI/CD pipelines.</p>
+        </div>
+        <div>
+          <strong style="color:#fff">Flaky Test Guides</strong>
+          <ul>
+            <li><a href="/guides/what-is-a-flaky-test">What is a flaky test?</a></li>
+            <li><a href="/guides/how-to-detect-flaky-tests">How to detect flaky tests</a></li>
+            <li><a href="/guides/how-to-fix-flaky-tests">How to fix flaky tests</a></li>
+            <li><a href="/guides/github-actions-flaky-tests">GitHub Actions &amp; GitLab CI</a></li>
+          </ul>
+        </div>
+        <div>
+          <strong style="color:#fff">Frameworks &amp; Compare</strong>
+          <ul>
+            <li><a href="/guides/jest-flaky-tests">Jest Flaky Tests</a></li>
+            <li><a href="/guides/playwright-flaky-tests">Playwright Flaky Tests</a></li>
+            <li><a href="/guides/pytest-flaky-tests">Pytest Flaky Tests</a></li>
+            <li><a href="/compare/flakecheck-vs-buildpulse">FlakeCheck vs BuildPulse</a></li>
+            <li><a href="/compare/flakecheck-vs-datadog-ci">FlakeCheck vs Datadog CI</a></li>
+          </ul>
+        </div>
+        <div>
+          <strong style="color:#fff">Developers</strong>
+          <ul>
+            <li><a href="/docs">Documentation</a></li>
+            <li><a href="/docs/api">OpenAPI 3.1 Reference</a></li>
+            <li><a href="/changelog">Changelog</a></li>
+            <li><a href="/sitemap.xml">Sitemap</a></li>
+            <li><a href="/llms.txt">llms.txt</a></li>
+            <li><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></li>
+          </ul>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
