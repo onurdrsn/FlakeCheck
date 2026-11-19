@@ -3,13 +3,18 @@ import { sha256Bytes } from '@flakecheck/shared-kernel';
 import { parseJunitXml } from './junit.js';
 import { parseJestJson, parsePlaywrightJson, parsePytestJson } from './json.js';
 import { parseGoTestJson } from './go.js';
+import { parseCtrfJson, parseMochaJson, parseVitestJson, ReportParseError } from './adapters.js';
 
 export type SupportedFormat =
-  | 'junit' | 'junit-xml' | 'jest' | 'jest-json' | 'playwright' | 'playwright-json'
-  | 'pytest' | 'pytest-json' | 'go' | 'go-test' | 'go-test-json';
+  | 'junit' | 'junit-xml' | 'ctrf' | 'ctrf-json'
+  | 'jest' | 'jest-json' | 'vitest' | 'vitest-json'
+  | 'playwright' | 'playwright-json'
+  | 'pytest' | 'pytest-json'
+  | 'mocha' | 'mocha-json'
+  | 'go' | 'go-test' | 'go-test-json';
 
 export async function parseReport(format: string, stream: ReadableStream<Uint8Array>, metadata: ParserMetadata): Promise<ParsedIngestion> {
-  const normalizedFormat = format.toLowerCase();
+  const normalizedFormat = format.toLowerCase().trim();
   const needsFallback = !(metadata.commit_sha || metadata.run_id);
   let parserMetadata = metadata;
   let parserStream = stream;
@@ -51,22 +56,36 @@ export async function parseReport(format: string, stream: ReadableStream<Uint8Ar
     case 'junit':
     case 'junit-xml':
       return parseJunitXml(parserStream, parserMetadata);
+    case 'ctrf':
+    case 'ctrf-json':
+      return parseCtrfJson(parserStream, parserMetadata);
     case 'jest':
     case 'jest-json':
       return parseJestJson(parserStream, parserMetadata);
+    case 'vitest':
+    case 'vitest-json':
+      return parseVitestJson(parserStream, parserMetadata);
     case 'playwright':
     case 'playwright-json':
       return parsePlaywrightJson(parserStream, parserMetadata);
     case 'pytest':
     case 'pytest-json':
       return parsePytestJson(parserStream, parserMetadata);
+    case 'mocha':
+    case 'mocha-json':
+      return parseMochaJson(parserStream, parserMetadata);
     case 'go':
     case 'go-test':
     case 'go-test-json':
       return parseGoTestJson(parserStream, parserMetadata);
     default:
-      throw new Error(`Unsupported ingestion format: ${format}`);
+      throw new ReportParseError(
+        format,
+        `Unsupported ingestion format "${format}"`,
+        'Supported formats: junit, ctrf, jest, vitest, playwright, pytest, mocha, go.',
+      );
   }
 }
 
+export { ReportParseError };
 export type { NormalizedAttempt, ParsedIngestion, ParserMetadata } from './types.js';
