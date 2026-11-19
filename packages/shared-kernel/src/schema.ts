@@ -24,6 +24,8 @@ export const tests = pgTable('tests', {
   isQuarantined: boolean('is_quarantined').default(false).notNull(),
   quarantinedAt: timestamp('quarantined_at', { withTimezone: true }),
   quarantineReason: text('quarantine_reason'),
+  quarantineOwner: text('quarantine_owner'),
+  quarantineMode: text('quarantine_mode').default('manual').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index('tests_repo_idx').on(table.repo),
@@ -53,11 +55,20 @@ export const classifications = pgTable('classifications', {
   runId: text('run_id').references(() => runs.id, { onDelete: 'cascade' }).notNull(),
   category: text('category').notNull(),
   confidence: integer('confidence').notNull(),
+  flakinessScore: integer('flakiness_score').default(0).notNull(),
+  flipRateBps: integer('flip_rate_bps').default(0).notNull(),
+  confidenceLowBps: integer('confidence_low_bps').default(0).notNull(),
+  confidenceHighBps: integer('confidence_high_bps').default(0).notNull(),
+  sampleSize: integer('sample_size').default(0).notNull(),
+  rootCause: text('root_cause').default('unknown').notNull(),
+  remediation: text('remediation'),
   evidence: jsonb('evidence').notNull(),
   calculatedAt: timestamp('calculated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex('classification_test_run_idx').on(table.testId, table.runId),
   index('classification_category_idx').on(table.category),
+  index('classification_score_idx').on(table.flakinessScore),
+  index('classification_root_cause_idx').on(table.rootCause),
 ]);
 
 export const users = pgTable('users', {
@@ -130,8 +141,12 @@ export const webhookConfigs = pgTable('webhook_configs', {
 export const projectTokens = pgTable('project_tokens', {
   id: text('id').primaryKey(),
   repo: text('repo').notNull(),
+  name: text('name').default('default').notNull(),
   tokenDigest: text('token_digest').notNull(),
+  scopes: jsonb('scopes').$type<string[]>().default(['ingest', 'read', 'quarantine']).notNull(),
   createdBy: text('created_by').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -144,8 +159,164 @@ export const repositoryAccess = pgTable('repository_access', {
   id: text('id').primaryKey(),
   userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
   repo: text('repo').notNull(),
+  role: text('role').default('owner').notNull(),
   grantedAt: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex('repository_access_user_repo_idx').on(table.userId, table.repo),
   index('repository_access_repo_idx').on(table.repo),
+]);
+
+export const organizations = pgTable('organizations', {
+  id: text('id').primaryKey(),
+  slug: text('slug').notNull(),
+  name: text('name').notNull(),
+  createdBy: text('created_by').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('organizations_slug_idx').on(table.slug),
+]);
+
+export const organizationMembers = pgTable('organization_members', {
+  id: text('id').primaryKey(),
+  orgId: text('org_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  role: text('role').default('member').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('org_members_org_user_idx').on(table.orgId, table.userId),
+  index('org_members_user_idx').on(table.userId),
+]);
+
+export const projects = pgTable('projects', {
+  id: text('id').primaryKey(),
+  orgId: text('org_id').references(() => organizations.id, { onDelete: 'cascade' }),
+  repo: text('repo').notNull(),
+  displayName: text('display_name'),
+  team: text('team').default('core').notNull(),
+  publicBadge: boolean('public_badge').default(false).notNull(),
+  retentionDays: integer('retention_days').default(90).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('projects_repo_idx').on(table.repo),
+  index('projects_org_idx').on(table.orgId),
+]);
+
+export const quarantinePolicies = pgTable('quarantine_policies', {
+  id: text('id').primaryKey(),
+  repo: text('repo').notNull(),
+  enabled: boolean('enabled').default(true).notNull(),
+  flakinessScoreThreshold: integer('flakiness_score_threshold').default(60).notNull(),
+  minFlipCount: integer('min_flip_count').default(2).notNull(),
+  minSampleSize: integer('min_sample_size').default(5).notNull(),
+  autoGraduatePasses: integer('auto_graduate_passes').default(10).notNull(),
+  nonBlockingMode: boolean('non_blocking_mode').default(true).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('quarantine_policies_repo_idx').on(table.repo),
+]);
+
+export const quarantineHistory = pgTable('quarantine_history', {
+  id: text('id').primaryKey(),
+  repo: text('repo').notNull(),
+  testId: text('test_id').references(() => tests.id, { onDelete: 'cascade' }).notNull(),
+  action: text('action').notNull(),
+  mode: text('mode').default('manual').notNull(),
+  actor: text('actor').notNull(),
+  owner: text('owner'),
+  reason: text('reason'),
+  flakinessScore: integer('flakiness_score'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('quarantine_history_repo_idx').on(table.repo),
+  index('quarantine_history_test_idx').on(table.testId),
+  index('quarantine_history_created_idx').on(table.createdAt),
+]);
+
+export const notificationPreferences = pgTable('notification_preferences', {
+  id: text('id').primaryKey(),
+  repo: text('repo').notNull(),
+  userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  channel: text('channel').notNull(),
+  target: text('target').notNull(),
+  signingSecret: text('signing_secret'),
+  events: jsonb('events').$type<string[]>().default(['PROVEN_FLAKE_DETECTED', 'AUTO_QUARANTINED', 'AUTO_GRADUATED']).notNull(),
+  digestFrequency: text('digest_frequency').default('realtime').notNull(),
+  dedupWindowMinutes: integer('dedup_window_minutes').default(60).notNull(),
+  rateLimitPerHour: integer('rate_limit_per_hour').default(20).notNull(),
+  enabled: boolean('enabled').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('notification_prefs_repo_idx').on(table.repo),
+  index('notification_prefs_user_idx').on(table.userId),
+]);
+
+export const notificationDeliveries = pgTable('notification_deliveries', {
+  id: text('id').primaryKey(),
+  repo: text('repo').notNull(),
+  channel: text('channel').notNull(),
+  eventType: text('event_type').notNull(),
+  dedupKey: text('dedup_key').notNull(),
+  status: text('status').notNull(),
+  error: text('error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('notification_deliveries_repo_idx').on(table.repo),
+  index('notification_deliveries_dedup_idx').on(table.dedupKey, table.createdAt),
+]);
+
+export const auditLogs = pgTable('audit_logs', {
+  id: text('id').primaryKey(),
+  orgId: text('org_id').references(() => organizations.id, { onDelete: 'set null' }),
+  repo: text('repo'),
+  actorId: text('actor_id').notNull(),
+  actorType: text('actor_type').notNull(),
+  action: text('action').notNull(),
+  resourceType: text('resource_type').notNull(),
+  resourceId: text('resource_id'),
+  metadata: jsonb('metadata').default({}).notNull(),
+  ipAddress: text('ip_address'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('audit_logs_repo_idx').on(table.repo),
+  index('audit_logs_actor_idx').on(table.actorId),
+  index('audit_logs_created_idx').on(table.createdAt),
+]);
+
+export const issueTrackerConfigs = pgTable('issue_tracker_configs', {
+  id: text('id').primaryKey(),
+  repo: text('repo').notNull(),
+  provider: text('provider').notNull(),
+  config: jsonb('config').$type<Record<string, unknown>>().default({}).notNull(),
+  enabled: boolean('enabled').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('issue_tracker_repo_provider_idx').on(table.repo, table.provider),
+]);
+
+export const trackedIssues = pgTable('tracked_issues', {
+  id: text('id').primaryKey(),
+  repo: text('repo').notNull(),
+  testId: text('test_id').references(() => tests.id, { onDelete: 'cascade' }).notNull(),
+  provider: text('provider').notNull(),
+  externalIssueId: text('external_issue_id').notNull(),
+  externalIssueUrl: text('external_issue_url').notNull(),
+  status: text('status').default('open').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex('tracked_issues_test_provider_idx').on(table.testId, table.provider),
+  index('tracked_issues_repo_idx').on(table.repo),
+]);
+
+export const ingestIdempotency = pgTable('ingest_idempotency', {
+  idempotencyKey: text('idempotency_key').primaryKey(),
+  repo: text('repo').notNull(),
+  runId: text('run_id').notNull(),
+  response: jsonb('response').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index('ingest_idempotency_repo_idx').on(table.repo),
+  index('ingest_idempotency_created_idx').on(table.createdAt),
 ]);
