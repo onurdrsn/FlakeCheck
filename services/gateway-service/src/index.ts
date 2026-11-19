@@ -519,34 +519,162 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       return context.json({ ok: true });
     });
     const healthCheckHandler = async (context: any) => {
-      const runCheck = async (name: string, checkFn: () => Promise<unknown>) => {
+      const checkedAt = new Date().toISOString();
+      const overallStart = Date.now();
+      const cf = (context.req?.raw as (Request & { cf?: { colo?: string; country?: string; httpProtocol?: string } }) | undefined)?.cf;
+
+      interface CheckMeta {
+        id: string;
+        name: string;
+        component: string;
+        type: 'cloudflare-worker-rpc' | 'postgresql-database';
+        probe: string;
+        capability: string;
+      }
+
+      const runCheck = async (meta: CheckMeta, checkFn: () => Promise<unknown>) => {
         const start = Date.now();
         try {
           const res = await checkFn();
+          const durationMs = Date.now() - start;
           if (res instanceof Response && !res.ok) {
-            return { name, status: 'error', durationMs: Date.now() - start, error: `HTTP ${res.status}` };
+            return {
+              ...meta,
+              state: 'rejected' as const,
+              status: 'error' as const,
+              healthy: false,
+              httpStatus: res.status,
+              durationMs,
+              checkedAt,
+              detail: `${meta.probe} failed with HTTP ${res.status}`,
+              error: `HTTP ${res.status}`,
+            };
           }
-          return { name, status: 'ok', durationMs: Date.now() - start };
+          const httpStatus = res instanceof Response ? res.status : 200;
+          return {
+            ...meta,
+            state: 'fulfilled' as const,
+            status: 'ok' as const,
+            healthy: true,
+            httpStatus,
+            durationMs,
+            checkedAt,
+            detail: `${meta.probe} succeeded (${durationMs}ms) — ${meta.capability}`,
+            error: undefined as string | undefined,
+          };
         } catch (error) {
-          return { name, status: 'error', durationMs: Date.now() - start, error: error instanceof Error ? error.message : String(error) };
+          const durationMs = Date.now() - start;
+          const errMsg = error instanceof Error ? error.message : String(error);
+          return {
+            ...meta,
+            state: 'rejected' as const,
+            status: 'error' as const,
+            healthy: false,
+            httpStatus: 503,
+            durationMs,
+            checkedAt,
+            detail: `${meta.probe} failed: ${errMsg}`,
+            error: errMsg,
+          };
         }
       };
 
       const [ingestion, analysis, quarantine, database] = await Promise.all([
-        runCheck('Ingestion Service', () => this.env.INGESTION_SERVICE.fetch(new Request('https://internal/health'))),
-        runCheck('Analysis Service', () => this.env.ANALYSIS_SERVICE.fetch(new Request('https://internal/health'))),
-        runCheck('Quarantine Service', () => this.env.QUARANTINE_SERVICE.fetch(new Request('https://internal/health'))),
-        runCheck('Neon Database (PostgreSQL)', () => createDatabase(context.env.DATABASE_URL).execute('select 1')),
+        runCheck(
+          {
+            id: 'ingestion-service',
+            name: 'Ingestion Service',
+            component: 'flakecheck-ingestion-service',
+            type: 'cloudflare-worker-rpc',
+            probe: 'Service Binding RPC GET https://internal/health',
+            capability: '8-format streaming test report parser (JUnit, CTRF, Jest, Vitest, Playwright, Pytest, Mocha, Go)',
+          },
+          () => this.env.INGESTION_SERVICE.fetch(new Request('https://internal/health')),
+        ),
+        runCheck(
+          {
+            id: 'analysis-service',
+            name: 'Analysis Service',
+            component: 'flakecheck-analysis-service',
+            type: 'cloudflare-worker-rpc',
+            probe: 'Service Binding RPC GET https://internal/health',
+            capability: 'Statistical Wilson CI flakiness scoring & 6-class root-cause classification engine',
+          },
+          () => this.env.ANALYSIS_SERVICE.fetch(new Request('https://internal/health')),
+        ),
+        runCheck(
+          {
+            id: 'quarantine-service',
+            name: 'Quarantine Service',
+            component: 'flakecheck-quarantine-service',
+            type: 'cloudflare-worker-rpc',
+            probe: 'Service Binding RPC GET https://internal/health',
+            capability: 'Automated quarantine policy evaluation, graduation & CI skip-list generation',
+          },
+          () => this.env.QUARANTINE_SERVICE.fetch(new Request('https://internal/health')),
+        ),
+        runCheck(
+          {
+            id: 'neon-postgres',
+            name: 'Neon Database (PostgreSQL)',
+            component: 'neondatabase-serverless',
+            type: 'postgresql-database',
+            probe: 'Drizzle ORM SQL probe (SELECT 1)',
+            capability: 'Serverless PostgreSQL connection & schema readiness',
+          },
+          () => createDatabase(context.env.DATABASE_URL).execute('select 1'),
+        ),
       ]);
 
-      const services = [ingestion, analysis, quarantine, database];
-      const isOk = services.every((s) => s.status === 'ok');
+      const checkResults = [ingestion, analysis, quarantine, database];
+      const isOk = checkResults.every((s) => s.status === 'ok');
+      const totalDurationMs = Date.now() - overallStart;
+      const fulfilledCount = checkResults.filter((s) => s.state === 'fulfilled').length;
 
       return context.json({
         status: isOk ? 'ok' : 'degraded',
         gateway: 'ok',
-        services,
-        checks: services.map((s) => s.status === 'ok' ? 'fulfilled' : 'rejected'),
+        timestamp: checkedAt,
+        environment: (this.env as unknown as { ENVIRONMENT?: string }).ENVIRONMENT ?? 'production',
+        edge: {
+          service: this.env.SERVICE_NAME ?? 'gateway-service',
+          colo: cf?.colo ?? 'edge',
+          country: cf?.country ?? 'GLOBAL',
+          protocol: cf?.httpProtocol ?? 'HTTP/2',
+          rateLimiterDurableObject: Boolean(this.env.RATE_LIMITER_DO),
+        },
+        summary: {
+          totalChecks: checkResults.length,
+          fulfilled: fulfilledCount,
+          rejected: checkResults.length - fulfilledCount,
+          totalDurationMs,
+        },
+        services: checkResults.map((c) => ({
+          id: c.id,
+          name: c.name,
+          component: c.component,
+          type: c.type,
+          status: c.status,
+          durationMs: c.durationMs,
+          detail: c.detail,
+          ...(c.error ? { error: c.error } : {}),
+        })),
+        checks: checkResults.map((c) => ({
+          id: c.id,
+          name: c.name,
+          component: c.component,
+          type: c.type,
+          probe: c.probe,
+          capability: c.capability,
+          state: c.state,
+          status: c.status,
+          healthy: c.healthy,
+          httpStatus: c.httpStatus,
+          durationMs: c.durationMs,
+          checkedAt: c.checkedAt,
+          detail: c.detail,
+          ...(c.error ? { error: c.error } : {}),
+        })),
       });
     };
     app.get('/api/health', healthCheckHandler);

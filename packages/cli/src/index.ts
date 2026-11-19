@@ -365,8 +365,32 @@ program.command('export').description('export active flakes')
     const content = options.target === 'csv' ? asCsv(result.items) : options.target === 'markdown' ? asMarkdown(result.items) : options.target === 'json' ? JSON.stringify(result.items, null, 2) : (() => { throw new CliError(1, '--target must be csv, json, or markdown'); })();
     if (options.output) writeFileSync(resolve(cwd(), options.output), `${content}\n`); else console.log(content);
   });
-type HealthService = { name: string; status: 'ok' | 'error'; durationMs?: number; error?: string };
-type HealthCheckResponse = { status: string; gateway?: string; services?: HealthService[]; checks?: string[] };
+type HealthService = {
+  id?: string;
+  name: string;
+  component?: string;
+  type?: string;
+  probe?: string;
+  capability?: string;
+  state?: 'fulfilled' | 'rejected';
+  status: 'ok' | 'error';
+  healthy?: boolean;
+  httpStatus?: number;
+  durationMs?: number;
+  checkedAt?: string;
+  detail?: string;
+  error?: string;
+};
+type HealthCheckResponse = {
+  status: string;
+  gateway?: string;
+  timestamp?: string;
+  environment?: string;
+  edge?: { service?: string; colo?: string; country?: string; protocol?: string; rateLimiterDurableObject?: boolean };
+  summary?: { totalChecks: number; fulfilled: number; rejected: number; totalDurationMs: number };
+  services?: HealthService[];
+  checks?: Array<HealthService | string>;
+};
 
 program.command('doctor')
   .description('check local configuration, Gateway, and backend service health')
@@ -389,6 +413,7 @@ program.command('doctor')
     const repo = options.repo ?? fileConfig?.repo ?? '';
     const token = options.token ?? fileConfig?.token ?? '';
     const hasRepoCredentials = Boolean(repo && token);
+    const git = detectGitContext();
 
     if (!gatewayUrl) {
       if (options.json) {
@@ -423,7 +448,7 @@ program.command('doctor')
     let repoAuthError: string | null = null;
     if (hasRepoCredentials) {
       try {
-        const summaryRes = await api.request< Record<string, unknown> >('/api/summary', { headers: { Accept: 'application/json' } });
+        const summaryRes = await api.request<Record<string, unknown>>('/api/summary', { headers: { Accept: 'application/json' } });
         if (typeof summaryRes === 'object' && summaryRes !== null) {
           repoAuthOk = true;
         } else {
@@ -441,10 +466,18 @@ program.command('doctor')
       'Neon Database (PostgreSQL)',
     ];
 
-    const services: HealthService[] = health?.services ?? (health?.checks ? health.checks.map((chk, i) => ({
-      name: defaultServiceNames[i] ?? `Service ${i + 1}`,
-      status: chk === 'fulfilled' ? 'ok' : 'error',
-    })) : []);
+    const checks: HealthService[] =
+      health?.checks && health.checks.length > 0
+        ? health.checks.map((chk, i) =>
+            typeof chk === 'object' && chk !== null
+              ? chk
+              : {
+                  name: defaultServiceNames[i] ?? `Service ${i + 1}`,
+                  state: chk === 'fulfilled' ? 'fulfilled' : 'rejected',
+                  status: chk === 'fulfilled' ? 'ok' : 'error',
+                },
+          )
+        : (health?.services ?? []);
 
     const overallHealthy = Boolean(health && health.status === 'ok');
 
@@ -456,12 +489,16 @@ program.command('doctor')
           repo: repo || null,
           gatewayUrl,
           tokenConfigured: Boolean(token),
+          git: git.commitSha || git.branch ? git : null,
         },
         repositoryAuth: hasRepoCredentials
           ? { status: repoAuthOk ? 'ok' : 'error', error: repoAuthError }
           : { status: 'skipped', reason: 'No repository token configured (standalone gateway check)' },
         gateway: health?.gateway ?? (health ? 'ok' : 'unreachable'),
-        services,
+        edge: health?.edge ?? null,
+        summary: health?.summary ?? null,
+        services: health?.services ?? checks,
+        checks,
         ...(healthError ? { gatewayError: healthError } : {}),
       }, null, 2));
     } else {
@@ -479,6 +516,9 @@ program.command('doctor')
       if (token) {
         console.log(`  \x1b[32m✔\x1b[0m API Token: ${token.slice(0, 6)}...${token.slice(-4)}`);
       }
+      if (git.commitSha || git.branch) {
+        console.log(`  \x1b[32m✔\x1b[0m Git Context: branch=${git.branch ?? 'detached'} commit=${git.commitSha ? git.commitSha.slice(0, 7) : 'n/a'}`);
+      }
 
       console.log('\n\x1b[1m[Repository Authentication]\x1b[0m');
       if (!hasRepoCredentials) {
@@ -489,17 +529,23 @@ program.command('doctor')
         console.log(`  \x1b[33m!\x1b[0m Repository access check: ${repoAuthError}`);
       }
 
-      console.log('\n\x1b[1m[Gateway & Backend Services]\x1b[0m');
+      console.log('\n\x1b[1m[Gateway & Backend Service Checks]\x1b[0m');
       if (healthError) {
         console.log(`  \x1b[31m✖\x1b[0m Gateway unreachable: ${healthError}`);
       } else {
-        console.log(`  \x1b[32m✔\x1b[0m Gateway Service: Healthy`);
-        for (const s of services) {
-          const latency = s.durationMs !== undefined ? ` (${s.durationMs}ms)` : '';
-          if (s.status === 'ok') {
-            console.log(`  \x1b[32m✔\x1b[0m ${s.name}: Healthy${latency}`);
+        const edgeInfo = health?.edge?.colo ? ` [Edge: ${health.edge.colo} · ${health.edge.protocol ?? 'HTTP/2'}]` : '';
+        console.log(`  \x1b[32m✔\x1b[0m Gateway Service: Healthy${edgeInfo}`);
+        for (const c of checks) {
+          const latency = c.durationMs !== undefined ? ` (${c.durationMs}ms)` : '';
+          const comp = c.component ? ` [${c.component}]` : '';
+          const stateBadge = (c.state ?? (c.status === 'ok' ? 'fulfilled' : 'rejected')).toUpperCase();
+          if (c.status === 'ok') {
+            console.log(`  \x1b[32m✔\x1b[0m ${c.name}${comp}: ${stateBadge}${latency}`);
+            if (c.probe || c.detail) {
+              console.log(`      \x1b[90m↳ ${c.detail ?? c.probe}\x1b[0m`);
+            }
           } else {
-            console.log(`  \x1b[31m✖\x1b[0m ${s.name}: Degraded${latency}${s.error ? ` - ${s.error}` : ''}`);
+            console.log(`  \x1b[31m✖\x1b[0m ${c.name}${comp}: ${stateBadge}${latency}${c.error ? ` - ${c.error}` : ''}`);
           }
         }
       }
@@ -538,51 +584,6 @@ program.command('report').description('write a Markdown or JSON CI/PR report')
     const markdown = githubMarkdown(summary, flakeResponse.items, options.dashboard);
     if (options.output) appendFileSync(resolve(cwd(), options.output), `${markdown}\n`);
     console.log(markdown);
-  });
-program.command('doctor').description('verify local config, git context, gateway connectivity, and database readiness')
-  .option('--gateway <url>', 'override Gateway URL')
-  .option('--json', 'output machine-readable JSON diagnostics')
-  .action(async (options: { gateway?: string; json?: boolean }) => {
-    const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
-    const nodeMajor = Number(process.versions.node.split('.')[0] ?? 0);
-    checks.push({ name: 'node_version', ok: nodeMajor >= 20, detail: `Node.js ${process.versions.node}` });
-
-    let cfg: Config | null = null;
-    try {
-      cfg = loadConfig();
-      checks.push({ name: 'config', ok: true, detail: `Loaded ${basename(configPath)} for ${cfg.repo}` });
-    } catch (error) {
-      checks.push({ name: 'config', ok: false, detail: error instanceof Error ? error.message : String(error) });
-    }
-
-    const git = detectGitContext();
-    checks.push({
-      name: 'git_context',
-      ok: Boolean(git.commitSha || git.branch),
-      detail: git.commitSha ? `branch=${git.branch ?? 'detached'} commit=${git.commitSha.slice(0, 7)}` : 'No local .git metadata detected',
-    });
-
-    const gatewayUrl = (options.gateway ?? cfg?.gatewayUrl ?? '').replace(/\/+$/, '');
-    if (gatewayUrl) {
-      try {
-        const res = await fetch(`${gatewayUrl}/ready`);
-        checks.push({ name: 'gateway_ready', ok: res.ok, detail: `GET ${gatewayUrl}/ready -> HTTP ${res.status}` });
-      } catch (error) {
-        checks.push({ name: 'gateway_ready', ok: false, detail: error instanceof Error ? error.message : String(error) });
-      }
-    } else {
-      checks.push({ name: 'gateway_ready', ok: false, detail: 'No gateway URL configured (run "flakecheck init")' });
-    }
-
-    const ok = checks.every((c) => c.ok);
-    if (options.json) {
-      console.log(JSON.stringify({ ok, checks }, null, 2));
-    } else {
-      for (const c of checks) {
-        console.log(`${c.ok ? '\x1b[32m✔\x1b[0m' : '\x1b[31m✖\x1b[0m'} ${c.name}: ${c.detail}`);
-      }
-    }
-    if (!ok) throw new CliError(1, 'Doctor found one or more failing checks');
   });
 program.command('demo').description('send a synthetic Jest report through the Gateway').action(async () => {
   const report = JSON.stringify({ testResults: [{ name: 'flakecheck-demo.test.ts', status: 'failed', assertionResults: [{ ancestorTitles: ['demo'], title: 'synthetic flaky test', status: 'failed', failureMessages: ['demo failure'] }] }] });

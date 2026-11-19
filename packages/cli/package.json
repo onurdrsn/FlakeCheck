@@ -1,6 +1,6 @@
 {
   "name": "@onurdrsn/flakecheck",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "type": "module",
   "description": "FlakeCheck (Flake Check) CLI — detect, classify, and auto-quarantine flaky tests across JUnit XML, CTRF, Jest, Vitest, Playwright, Pytest, Mocha, and Go in CI/CD pipelines.",
   "keywords": [
