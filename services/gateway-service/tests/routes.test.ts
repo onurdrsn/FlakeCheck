@@ -57,19 +57,47 @@ describe('gateway routes', () => {
     expect(await response.json()).toEqual({ error: 'Authentication required' });
   });
 
-  it('returns detailed health status for all services and database', async () => {
+  it('returns detailed health status and structured diagnostic checks for all services and database', async () => {
     const { response } = await request('/api/health');
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body).toMatchObject({
       gateway: 'ok',
+      summary: {
+        totalChecks: 4,
+        fulfilled: 3,
+        rejected: 1,
+        totalDurationMs: expect.any(Number),
+      },
       services: expect.arrayContaining([
-        expect.objectContaining({ name: 'Ingestion Service' }),
-        expect.objectContaining({ name: 'Analysis Service' }),
-        expect.objectContaining({ name: 'Quarantine Service' }),
-        expect.objectContaining({ name: 'Neon Database (PostgreSQL)' }),
+        expect.objectContaining({ id: 'ingestion-service', name: 'Ingestion Service', status: 'ok' }),
+        expect.objectContaining({ id: 'analysis-service', name: 'Analysis Service', status: 'ok' }),
+        expect.objectContaining({ id: 'quarantine-service', name: 'Quarantine Service', status: 'ok' }),
+        expect.objectContaining({ id: 'neon-postgres', name: 'Neon Database (PostgreSQL)', status: 'error' }),
       ]),
-      checks: expect.any(Array),
+      checks: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'ingestion-service',
+          name: 'Ingestion Service',
+          component: 'flakecheck-ingestion-service',
+          type: 'cloudflare-worker-rpc',
+          state: 'fulfilled',
+          status: 'ok',
+          healthy: true,
+          httpStatus: 200,
+          durationMs: expect.any(Number),
+          detail: expect.stringContaining('Service Binding RPC'),
+        }),
+        expect.objectContaining({
+          id: 'neon-postgres',
+          name: 'Neon Database (PostgreSQL)',
+          component: 'neondatabase-serverless',
+          type: 'postgresql-database',
+          state: 'rejected',
+          status: 'error',
+          healthy: false,
+        }),
+      ]),
     });
   });
 

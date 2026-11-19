@@ -4,16 +4,42 @@ import { apiUrl } from '../http';
 import { getStoredLocale, translations } from '../i18n';
 
 interface ServiceCheck {
+  id?: string;
   name: string;
+  component?: string;
+  type?: string;
+  probe?: string;
+  capability?: string;
+  state?: 'fulfilled' | 'rejected';
   status: 'ok' | 'error';
+  healthy?: boolean;
+  httpStatus?: number;
   durationMs: number;
+  checkedAt?: string;
+  detail?: string;
   error?: string;
 }
 
 interface HealthResponse {
   status: 'ok' | 'degraded';
   gateway: string;
+  timestamp?: string;
+  environment?: string;
+  edge?: {
+    service?: string;
+    colo?: string;
+    country?: string;
+    protocol?: string;
+    rateLimiterDurableObject?: boolean;
+  };
+  summary?: {
+    totalChecks: number;
+    fulfilled: number;
+    rejected: number;
+    totalDurationMs: number;
+  };
   services: ServiceCheck[];
+  checks?: Array<ServiceCheck | string>;
 }
 
 export function StatusPage() {
@@ -60,6 +86,10 @@ export function StatusPage() {
   }, [fetchHealth]);
 
   const allOperational = health?.status === 'ok';
+  const detailedChecks: ServiceCheck[] =
+    health?.checks && health.checks.length > 0 && typeof health.checks[0] === 'object'
+      ? (health.checks as ServiceCheck[])
+      : (health?.services ?? []);
 
   return (
     <main className="legal-page">
@@ -114,6 +144,13 @@ export function StatusPage() {
                 : 'Refresh Status ↻'}
           </button>
 
+          {health?.summary && (
+            <small style={{ color: 'var(--fc-mint-300)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+              {health.summary.fulfilled}/{health.summary.totalChecks} checks fulfilled · {health.summary.totalDurationMs} ms
+              {health.edge?.colo ? ` · Edge ${health.edge.colo}` : ''}
+            </small>
+          )}
+
           {lastChecked && (
             <small style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
               {isTr ? `Son kontrol: ${lastChecked}` : `Last checked: ${lastChecked}`}
@@ -127,11 +164,11 @@ export function StatusPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
             <div>
               <h2 style={{ marginBottom: '4px' }}>
-                {isTr ? 'Çekirdek Servis Bileşenleri' : 'Core Service Components'}
+                {isTr ? 'Çekirdek Servis Bileşenleri ve Tanılama Kontrolleri' : 'Core Service Components & Diagnostic Checks'}
               </h2>
               <p style={{ margin: 0 }}>
                 {isTr
-                  ? 'Her bileşen doğrudan `/api/health` uç noktası üzerinden canlı olarak sorgulanır.'
+                  ? 'Her bileşen doğrudan `/api/health` uç noktası üzerinden canlı probe ile sorgulanır.'
                   : 'Each component is probed live via the `/api/health` diagnostic endpoint.'}
               </p>
             </div>
@@ -166,7 +203,7 @@ export function StatusPage() {
                   API Gateway & OAuth Edge (`flakecheck-gateway-service`)
                 </strong>
                 <small style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
-                  Cloudflare Edge Worker · Web UI & REST/OAuth Router
+                  Cloudflare Edge Worker ({health?.edge?.colo ?? 'edge'} · {health?.edge?.protocol ?? 'HTTP/2'}) · Web UI, REST/OAuth & RateLimiterDO
                 </small>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -178,8 +215,8 @@ export function StatusPage() {
                 <span className={`badge ${health?.gateway === 'ok' ? 'low' : 'medium'}`}>
                   {health?.gateway === 'ok'
                     ? isTr
-                      ? 'AKTİF (OPERATIONAL)'
-                      : 'OPERATIONAL'
+                      ? 'AKTİF (FULFILLED)'
+                      : 'FULFILLED · OK'
                     : isTr
                       ? 'KONTROL EDİLİYOR'
                       : 'CHECKING'}
@@ -187,14 +224,14 @@ export function StatusPage() {
               </div>
             </div>
 
-            {/* Sub-services from /api/health */}
-            {(health?.services ?? []).map((svc) => (
+            {/* Detailed checks from /api/health */}
+            {detailedChecks.map((svc) => (
               <div
-                key={svc.name}
+                key={svc.id ?? svc.name}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
-                  alignItems: 'center',
+                  alignItems: 'flex-start',
                   padding: '16px 20px',
                   borderRadius: 'var(--radius-sm)',
                   border: '1px solid var(--line)',
@@ -203,16 +240,27 @@ export function StatusPage() {
                   flexWrap: 'wrap',
                 }}
               >
-                <div>
+                <div style={{ flex: '1 1 420px' }}>
                   <strong style={{ display: 'block', fontSize: '14px', color: 'var(--fc-slate-50)' }}>
-                    {svc.name}
+                    {svc.name}{' '}
+                    {svc.component && (
+                      <span style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '12px', fontWeight: 500 }}>
+                        (`{svc.component}`)
+                      </span>
+                    )}
                   </strong>
-                  <small style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+                  {svc.probe && (
+                    <small style={{ display: 'block', color: 'var(--fc-mint-300)', fontFamily: 'var(--font-mono)', fontSize: '11px', marginTop: '3px' }}>
+                      Probe: {svc.probe} {svc.httpStatus ? `→ HTTP ${svc.httpStatus}` : ''}
+                    </small>
+                  )}
+                  <small style={{ display: 'block', color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: '11px', marginTop: '3px' }}>
                     {svc.error
                       ? svc.error
-                      : isTr
-                        ? 'Cloudflare Service Binding RPC / Doğrudan Bağlantı'
-                        : 'Cloudflare Service Binding RPC / Direct Connection'}
+                      : svc.detail ??
+                        (isTr
+                          ? 'Cloudflare Service Binding RPC / Doğrudan Bağlantı'
+                          : 'Cloudflare Service Binding RPC / Direct Connection')}
                   </small>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -222,11 +270,11 @@ export function StatusPage() {
                   <span className={`badge ${svc.status === 'ok' ? 'low' : 'high'}`}>
                     {svc.status === 'ok'
                       ? isTr
-                        ? 'AKTİF (OPERATIONAL)'
-                        : 'OPERATIONAL'
+                        ? `AKTİF (${(svc.state ?? 'fulfilled').toUpperCase()})`
+                        : `${(svc.state ?? 'fulfilled').toUpperCase()} · OK`
                       : isTr
-                        ? 'HATA (DEGRADED)'
-                        : 'DEGRADED'}
+                        ? `HATA (${(svc.state ?? 'rejected').toUpperCase()})`
+                        : `${(svc.state ?? 'rejected').toUpperCase()} · ERROR`}
                   </span>
                 </div>
               </div>
