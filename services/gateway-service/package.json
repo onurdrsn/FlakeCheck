@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "pnpm run build:web && tsc -p tsconfig.build.json",
-    "build:web": "vite build",
+    "build:web": "vite build && tsx scripts/prerender-seo.ts",
     "dev:web": "vite --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"

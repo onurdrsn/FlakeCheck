@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://flakecheck.onurd.com.tr/</loc><lastmod>2026-11-19</lastmod><priority>1.0</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/guides</loc><lastmod>2026-11-19</lastmod><priority>0.7</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/docs</loc><lastmod>2026-11-19</lastmod><priority>0.7</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/docs/api</loc><lastmod>2026-11-19</lastmod><priority>0.7</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/changelog</loc><lastmod>2026-11-19</lastmod><priority>0.7</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/status</loc><lastmod>2026-11-19</lastmod><priority>0.7</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/support</loc><lastmod>2026-11-19</lastmod><priority>0.7</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/privacy</loc><lastmod>2026-11-19</lastmod><priority>0.7</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/terms</loc><lastmod>2026-11-19</lastmod><priority>0.7</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/guides/what-is-a-flaky-test</loc><lastmod>2026-11-19</lastmod><priority>0.8</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/guides/how-to-detect-flaky-tests</loc><lastmod>2026-11-19</lastmod><priority>0.8</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/guides/how-to-fix-flaky-tests</loc><lastmod>2026-11-19</lastmod><priority>0.8</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/guides/jest-flaky-tests</loc><lastmod>2026-11-19</lastmod><priority>0.8</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/guides/playwright-flaky-tests</loc><lastmod>2026-11-19</lastmod><priority>0.8</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/guides/pytest-flaky-tests</loc><lastmod>2026-11-19</lastmod><priority>0.8</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/guides/go-flaky-tests</loc><lastmod>2026-11-19</lastmod><priority>0.8</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/guides/junit-flaky-tests</loc><lastmod>2026-11-19</lastmod><priority>0.8</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/guides/github-actions-flaky-tests</loc><lastmod>2026-11-19</lastmod><priority>0.8</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/compare/flakecheck-vs-buildpulse</loc><lastmod>2026-11-19</lastmod><priority>0.8</priority></url>
+  <url><loc>https://flakecheck.onurd.com.tr/compare/flakecheck-vs-datadog-ci</loc><lastmod>2026-11-19</lastmod><priority>0.8</priority></url>
+</urlset>

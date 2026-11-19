@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>How to Fix Flaky Tests: Causes &amp; Solutions | FlakeCheck</title>
+    <meta name="description" content="Actionable engineering playbook on how to fix flaky tests across timing races, shared state, network calls, concurrency, and test order." />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
+    <link rel="canonical" href="https://flakecheck.onurd.com.tr/guides/how-to-fix-flaky-tests" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="theme-color" content="#070a0f" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="FlakeCheck" />
+    <meta property="og:url" content="https://flakecheck.onurd.com.tr/guides/how-to-fix-flaky-tests" />
+    <meta property="og:title" content="How to Fix Flaky Tests: Causes &amp; Solutions | FlakeCheck" />
+    <meta property="og:description" content="Actionable engineering playbook on how to fix flaky tests across timing races, shared state, network calls, concurrency, and test order." />
+    <meta property="og:image" content="https://flakecheck.onurd.com.tr/og/how-to-fix-flaky-tests.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="How to Fix Flaky Tests: Causes &amp; Solutions | FlakeCheck" />
+    <meta name="twitter:description" content="Actionable engineering playbook on how to fix flaky tests across timing races, shared state, network calls, concurrency, and test order." />
+    <meta name="twitter:image" content="https://flakecheck.onurd.com.tr/og/how-to-fix-flaky-tests.svg" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"Article","headline":"How to Fix Flaky Tests: Root Causes, Code Patterns, and Prevention","description":"Actionable engineering playbook on how to fix flaky tests across timing races, shared state, network calls, concurrency, and test order.","datePublished":"2026-10-10","dateModified":"2026-11-19","author":{"@type":"Organization","name":"FlakeCheck"},"publisher":{"@type":"Organization","name":"FlakeCheck","logo":{"@type":"ImageObject","url":"https://flakecheck.onurd.com.tr/favicon.svg"}},"mainEntityOfPage":"https://flakecheck.onurd.com.tr/guides/how-to-fix-flaky-tests"}</script>
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://flakecheck.onurd.com.tr/"},{"@type":"ListItem","position":2,"name":"Guides","item":"https://flakecheck.onurd.com.tr/guides"},{"@type":"ListItem","position":3,"name":"How to Fix Flaky Tests: Root Causes, Code Patterns, and Prevention","item":"https://flakecheck.onurd.com.tr/guides/how-to-fix-flaky-tests"}]}</script>
+    <style>
+      :root{--bg:#070a0f;--panel:#0e131d;--panel2:#131a27;--line:rgba(255,255,255,.09);--text:#f1f5f9;--muted:#94a3b8;--mint:#34d399;--mint2:#10b981;--mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;--sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+      *{box-sizing:border-box}
+      body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.65;-webkit-font-smoothing:antialiased}
+      a{color:var(--mint);text-decoration:none}
+      a:hover{text-decoration:underline}
+      .skip-link{position:absolute;left:-9999px;top:0;background:var(--mint);color:#04120c;padding:8px 14px;font-weight:700;z-index:100}
+      .skip-link:focus{left:12px;top:12px;border-radius:6px}
+      .nav{position:sticky;top:0;z-index:40;background:rgba(7,10,15,.88);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+      .nav-inner{max-width:1160px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+      .brand{display:inline-flex;align-items:center;gap:10px;color:var(--text);font-weight:800;font-size:16px;letter-spacing:-.02em}
+      .brand-mark{display:grid;place-items:center;width:32px;height:32px;border-radius:8px;border:1px solid var(--mint);background:rgba(16,185,129,.15);color:var(--mint);font:700 12px var(--mono)}
+      .nav-links{display:flex;align-items:center;gap:18px;flex-wrap:wrap;font-size:14px}
+      .nav-links a{color:var(--muted);font-weight:500}
+      .nav-links a:hover{color:var(--text)}
+      .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:9px;font-weight:600;font-size:14px;border:1px solid var(--line);background:var(--panel2);color:var(--text);transition:transform .15s,border-color .15s}
+      .btn:hover{border-color:var(--mint);text-decoration:none;transform:translateY(-1px)}
+      .btn-primary{background:linear-gradient(135deg,#34d399,#10b981);color:#052016;border-color:#34d399;font-weight:700}
+      .wrap{max-width:1160px;margin:0 auto;padding:48px 24px}
+      .article-wrap{max-width:860px;margin:0 auto;padding:44px 24px}
+      h1{font-size:clamp(2rem,4vw,3.1rem);line-height:1.15;letter-spacing:-.03em;margin:0 0 18px;color:#fff}
+      h2{font-size:clamp(1.35rem,2.4vw,1.8rem);line-height:1.25;letter-spacing:-.02em;margin:36px 0 12px;color:#fff}
+      h3{font-size:1.05rem;margin:0 0 8px;color:#fff}
+      p{color:var(--muted);margin:0 0 16px}
+      .lead{font-size:1.12rem;color:#cbd5e1;max-width:70ch}
+      .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;font:600 12px var(--mono);color:var(--mint);background:rgba(16,185,129,.12);border:1px solid rgba(52,211,153,.3);margin-bottom:16px}
+      .grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:24px}
+      .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+      .card:hover{border-color:rgba(52,211,153,.35)}
+      pre{background:#0b1018;border:1px solid var(--line);border-radius:10px;padding:16px;overflow-x:auto;font:13px/1.6 var(--mono);color:#e2e8f0;margin:18px 0}
+      code{font-family:var(--mono);font-size:.9em}
+      .breadcrumb{display:flex;gap:8px;font-size:13px;color:var(--muted);margin-bottom:18px;flex-wrap:wrap}
+      .faq-item{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:12px}
+      .footer{border-top:1px solid var(--line);margin-top:64px;padding:36px 24px;color:var(--muted);font-size:13px}
+      .footer-inner{max-width:1160px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:24px}
+      .footer ul{list-style:none;padding:0;margin:8px 0 0;display:grid;gap:6px}
+      .cta-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px}
+      @media (max-width:640px){.wrap,.article-wrap{padding:28px 16px}}
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <header class="nav">
+      <div class="nav-inner">
+        <a class="brand" href="/"><span class="brand-mark">FC</span><span>FlakeCheck</span></a>
+        <nav class="nav-links" aria-label="Primary navigation">
+          <a href="/guides">Guides</a>
+          <a href="/docs">Docs</a>
+          <a href="/docs/api">API</a>
+          <a href="/compare/flakecheck-vs-buildpulse">Compare</a>
+          <a href="/changelog">Changelog</a>
+          <a href="/status">Status</a>
+          <a class="btn btn-primary" href="/login">Open Dashboard</a>
+        </nav>
+      </div>
+    </header>
+    <main id="main-content">
+      
+  <article class="article-wrap">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="/">Home</a><span>/</span>
+      <a href="/guides">Guides</a><span>/</span>
+      <span>Remediation</span>
+    </nav>
+    <span class="pill">REMEDIATION · 9 MIN READ</span>
+    <h1>How to Fix Flaky Tests: Root Causes, Code Patterns, and Prevention</h1>
+    <p class="lead">Actionable engineering playbook on how to fix flaky tests across timing races, shared state, network calls, concurrency, and test order.</p>
+    
+      <h2>1. Eliminate Timing and Race Conditions</h2>
+      <p>Hard-coded sleep statements (sleep(500), setTimeout) are the single largest source of flaky tests. Under heavy CI load, a 500ms wait finishes before an async request or DOM transition completes. Replace arbitrary delays with deterministic condition polling, fake timers, or event-driven assertions.</p>
+      <pre><code class="language-typescript">// Bad: race-prone sleep
+await new Promise((r) =&gt; setTimeout(r, 300));
+expect(statusText).toBe(&#39;Saved&#39;);
+
+// Good: deterministic wait / fake timers
+await expect.poll(() =&gt; getStatusText(), { timeout: 5000 }).toBe(&#39;Saved&#39;);</code></pre>
+      <h2>2. Isolate Shared State and Parallel Workers</h2>
+      <p>Tests that bind fixed ports (like 3000 or 8080), write to a shared temp path, or insert hardcoded emails into a shared PostgreSQL database will randomly collide when test runners execute files in parallel. Always bind port 0 for ephemeral test servers, use unique UUIDs or rolled-back transactions per test, and create isolated temporary directories.</p>
+      
+      <h2>3. Stub External Networks Deterministically</h2>
+      <p>Unit and integration tests must never depend on live external APIs. Use Mock Service Worker (MSW), Nock, WireMock, or local test containers so network latency, rate limits, and third-party outages cannot poison your CI signal.</p>
+      
+      <h2>4. Quarantine While You Fix (Without Blocking Deploys)</h2>
+      <p>When a critical release is blocked by a known flaky test, teams face an ugly choice: disable the entire test suite or repeatedly rerun CI. Automated quarantine solves this cleanly. FlakeCheck moves high-score flakes into non-blocking quarantine mode, tracks the owner and reason in an audit log, opens a Jira/Linear/GitHub issue, and automatically graduates the test back to blocking CI once it passes 10 consecutive runs.</p>
+      
+    
+    <div class="card" style="margin-top:32px">
+      <h3>Eliminate flaky tests automatically with FlakeCheck</h3>
+      <p>Stream your JUnit, CTRF, Jest, Vitest, Playwright, Pytest, Mocha, or Go reports to FlakeCheck and get statistical scoring + auto-quarantine in minutes.</p>
+      <div class="cta-row"><a class="btn btn-primary" href="/login">Launch FlakeCheck</a><a class="btn" href="/docs/api">API Docs</a></div>
+    </div>
+    <h2>Related Guides</h2><div class="grid-3"><a class="card" href="/guides/what-is-a-flaky-test"><h3>What Is a Flaky Test? Causes, Impact, and How to Eliminate Test Flakiness</h3><p>Learn what a flaky test is, why flaky tests break CI velocity, how to measure test flakiness, and how FlakeCheck quarantines unstable tests.</p></a><a class="card" href="/guides/how-to-detect-flaky-tests"><h3>How to Detect Flaky Tests Automatically in CI/CD Pipelines</h3><p>Step-by-step guide to flaky test detection using rerun tracking, flip-rate statistics, Wilson confidence intervals, JUnit XML, and CTRF.</p></a><a class="card" href="/guides/jest-flaky-tests"><h3>How to Detect and Fix Jest Flaky Tests in CI</h3><p>Detect and fix Jest flaky tests caused by open handles, fake timers, mock leaks, and worker contention. Integrate Jest JSON with FlakeCheck.</p></a></div>
+  </article>
+    </main>
+    <footer class="footer">
+      <div class="footer-inner">
+        <div>
+          <strong style="color:#fff">FlakeCheck</strong>
+          <p style="margin-top:8px">Edge-native flaky test detection, root-cause forensics, and automated quarantine for modern CI/CD pipelines.</p>
+        </div>
+        <div>
+          <strong style="color:#fff">Flaky Test Guides</strong>
+          <ul>
+            <li><a href="/guides/what-is-a-flaky-test">What is a flaky test?</a></li>
+            <li><a href="/guides/how-to-detect-flaky-tests">How to detect flaky tests</a></li>
+            <li><a href="/guides/how-to-fix-flaky-tests">How to fix flaky tests</a></li>
+            <li><a href="/guides/github-actions-flaky-tests">GitHub Actions &amp; GitLab CI</a></li>
+          </ul>
+        </div>
+        <div>
+          <strong style="color:#fff">Frameworks &amp; Compare</strong>
+          <ul>
+            <li><a href="/guides/jest-flaky-tests">Jest Flaky Tests</a></li>
+            <li><a href="/guides/playwright-flaky-tests">Playwright Flaky Tests</a></li>
+            <li><a href="/guides/pytest-flaky-tests">Pytest Flaky Tests</a></li>
+            <li><a href="/compare/flakecheck-vs-buildpulse">FlakeCheck vs BuildPulse</a></li>
+            <li><a href="/compare/flakecheck-vs-datadog-ci">FlakeCheck vs Datadog CI</a></li>
+          </ul>
+        </div>
+        <div>
+          <strong style="color:#fff">Developers</strong>
+          <ul>
+            <li><a href="/docs">Documentation</a></li>
+            <li><a href="/docs/api">OpenAPI 3.1 Reference</a></li>
+            <li><a href="/changelog">Changelog</a></li>
+            <li><a href="/sitemap.xml">Sitemap</a></li>
+            <li><a href="/llms.txt">llms.txt</a></li>
+            <li><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></li>
+          </ul>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

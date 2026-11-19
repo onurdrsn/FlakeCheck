@@ -1,0 +1,28 @@
+# FlakeCheck
+
+> FlakeCheck (Flake Check / flake-check) is an open-source, edge-native flaky test detection, root-cause classification, and automated quarantine platform built on Hono, Cloudflare Workers, Drizzle ORM, and Neon PostgreSQL.
+
+## Core Capabilities
+- Statistical Flakiness Scoring: Wilson 95% confidence intervals combining same-commit rerun flips and cross-run flip-rate history.
+- Root Cause Classification: timing_race, order_dependency, network_external, shared_state, resource_concurrency, environment_diff, unknown.
+- Universal Test Report Adapters: JUnit XML, CTRF, Jest, Vitest, Playwright, Pytest, Mocha, Go test JSON.
+- Auto-Quarantine & Policy Engine: score/flip/sample thresholds, non-blocking CI quarantine mode, manual overrides, auto-graduation.
+- Integrations: GitHub Actions, GitLab CI, CircleCI, Jenkins, GitHub PR comments & commit status checks, GitHub Issues, Jira, Linear, Slack, Discord, Email, signed webhooks.
+
+## Key URLs
+- Home: https://flakecheck.onurd.com.tr/
+- OpenAPI 3.1 Schema: https://flakecheck.onurd.com.tr/api/v1/openapi.json
+- Interactive API Docs: https://flakecheck.onurd.com.tr/docs/api
+- Guides Hub: https://flakecheck.onurd.com.tr/guides
+- Changelog: https://flakecheck.onurd.com.tr/changelog
+- What Is a Flaky Test? Causes, Impact, and How to Eliminate Test Flakiness: https://flakecheck.onurd.com.tr/guides/what-is-a-flaky-test
+- How to Detect Flaky Tests Automatically in CI/CD Pipelines: https://flakecheck.onurd.com.tr/guides/how-to-detect-flaky-tests
+- How to Fix Flaky Tests: Root Causes, Code Patterns, and Prevention: https://flakecheck.onurd.com.tr/guides/how-to-fix-flaky-tests
+- How to Detect and Fix Jest Flaky Tests in CI: https://flakecheck.onurd.com.tr/guides/jest-flaky-tests
+- Playwright Flaky Tests: Root Causes, Retries, and Quarantine: https://flakecheck.onurd.com.tr/guides/playwright-flaky-tests
+- Pytest Flaky Tests: Isolating Fixtures, Async Loops, and Reruns: https://flakecheck.onurd.com.tr/guides/pytest-flaky-tests
+- Go Flaky Tests: Concurrency Races, Goroutine Leaks, and Detection: https://flakecheck.onurd.com.tr/guides/go-flaky-tests
+- JUnit Flaky Tests: Universal XML Ingestion Across Any Language: https://flakecheck.onurd.com.tr/guides/junit-flaky-tests
+- Managing Flaky Tests in GitHub Actions and GitLab CI: https://flakecheck.onurd.com.tr/guides/github-actions-flaky-tests
+- FlakeCheck vs BuildPulse: Which Flaky Test Detector Fits Your Team?: https://flakecheck.onurd.com.tr/compare/flakecheck-vs-buildpulse
+- FlakeCheck vs Datadog CI Visibility: Focused Flake Control vs Full APM: https://flakecheck.onurd.com.tr/compare/flakecheck-vs-datadog-ci

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#070a0f"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect x="64" y="64" width="1072" height="502" rx="24" fill="#0e131d" stroke="rgba(52,211,153,0.35)" stroke-width="2"/>
+  <rect x="112" y="116" width="58" height="58" rx="14" fill="rgba(16,185,129,0.18)" stroke="#34d399" stroke-width="2"/>
+  <text x="141" y="153" text-anchor="middle" fill="#34d399" font-family="monospace" font-size="24" font-weight="700">FC</text>
+  <text x="190" y="154" fill="#e2e8f0" font-family="sans-serif" font-size="28" font-weight="700">FlakeCheck</text>
+  <text x="112" y="290" fill="#ffffff" font-family="sans-serif" font-size="46" font-weight="800">FlakeCheck vs BuildPulse: Which Flaky Test Detector Fits Y</text>
+  <text x="112" y="360" fill="#94a3b8" font-family="sans-serif" font-size="24">Compare FlakeCheck and BuildPulse on self-hosting, pricing, CTRF/JUnit/Vitest/Playwright support</text>
+  <rect x="112" y="450" width="260" height="6" rx="3" fill="url(#accent)"/>
+  <text x="112" y="505" fill="#34d399" font-family="monospace" font-size="20">flakecheck.onurd.com.tr · Flaky Test Detection &amp; Quarantine</text>
+</svg>

@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Allow: /guides/
+Allow: /compare/
+Allow: /docs
+Allow: /changelog
+Disallow: /app
+Disallow: /dashboard
+Disallow: /login
+Disallow: /api/
+Allow: /api/v1/badge/
+Allow: /api/v1/openapi.json
+
+Sitemap: https://flakecheck.onurd.com.tr/sitemap.xml
