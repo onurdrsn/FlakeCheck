@@ -39,7 +39,23 @@
 
 ---
 
-## Remaining Risks & Recommended Next Steps
-1. **Distributed Rate Limiting:** The sliding-window rate limiter in `security.ts` operates per Workers isolate; for strict global enforcement at high RPS, attach a Cloudflare Rate Limiting binding or Durable Object.
-2. **Scheduled Digest & Retention Cron:** Configure a Cloudflare Cron Trigger in `gateway-service` to invoke daily/weekly digest dispatch and prune rows older than `projects.retention_days`.
-3. **Production Deployment & Live Lighthouse Run:** Run `pnpm db:migrate` against Neon and deploy workers via `wrangler deploy`, then execute Lighthouse against the live URL and complete external Search Console/Bing/launch items in `docs/SEO_CHECKLIST.md`.
+## Phase 2 — Production Hardening (Completed)
+
+1. **Scheduled Jobs via cron-job.org (Zero Cloudflare Cron Triggers)**:
+   - Added internal protected endpoints `POST /api/v1/internal/cron/digest?type=daily|weekly` and `POST /api/v1/internal/cron/retention?dryRun=true|false` (`services/gateway-service/src/cron.ts`).
+   - Timing-safe Bearer verification with zero-downtime dual-secret rotation (`CRON_SECRET` + `CRON_SECRET_PREVIOUS`), `401` + `WWW-Authenticate` on failure, `X-Robots-Tag: noindex, nofollow`, hidden from public OpenAPI spec, and secret redaction in `packages/shared-kernel/src/logger.ts`.
+   - `202 Accepted` immediate response + `waitUntil`/Queue async execution, `cron_runs` table (`drizzle/0006_tired_robin_chapel.sql`) with unique `(job_type, period_key, dry_run)` idempotency lock, cursor-based batch resumption, retention `dryRun` + audit logging.
+   - Added idempotent `scripts/cronjob-sync.ts` targeting the verified `https://api.cron-job.org` REST API (`--dry-run` supported, staging/production separation) plus manual setup steps in `docs/DEPLOYMENT.md`.
+2. **Distributed Rate Limiting (Durable Object + CF Binding)**:
+   - Replaced isolate-local rate limiter with `RateLimiterDO` Durable Object (`services/gateway-service/src/rate-limit.ts`, bound in `wrangler.jsonc`) with separate env-configurable limits for `auth`, `ingest`, `badge`, `cron`, and `api`, returning `429` + `Retry-After`.
+3. **Security Hardening & Verification**:
+   - Added timing-safe HMAC + timestamp tolerance replay protection (`verifyWebhookRequest` in `security.ts`).
+   - Added comprehensive test suite (`services/gateway-service/tests/hardening.test.ts`) scanning protected `/api/v1/*` routes, Zod validation, CSP dashboard/OAuth compatibility, and additive migration SQL checks.
+4. **Deploy Readiness & SEO Automation**:
+   - Added `scripts/deploy-check.sh`, `scripts/seo-verify.sh`, `.lighthouserc.json`, and wired Lighthouse CI + `cronjob-sync --dry-run` into `.github/workflows/ci.yml`.
+
+---
+
+## Remaining Operational Risks & Next Steps
+1. **Live Production Deployment & DB Migration Execution:** Run `pnpm db:migrate` against Neon (applying `0005` and `0006`), configure `CRON_SECRET` via `wrangler secret put`, deploy Workers (`wrangler deploy`), then execute `scripts/cronjob-sync.ts`, `scripts/deploy-check.sh`, and `scripts/seo-verify.sh` against the live URL.
+2. **External Off-Page SEO:** Complete Google Search Console, Bing Webmaster Tools, npm publish, and community launch items listed in `docs/SEO_CHECKLIST.md`.

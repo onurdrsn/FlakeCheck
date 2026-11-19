@@ -25,3 +25,20 @@ jobs:
         run: pnpm test
       - name: Build all packages & workers
         run: pnpm build
+      - name: Verify cron-job.org sync script (dry-run)
+        env:
+          FLAKECHECK_BASE_URL: https://flakecheck.onurd.com.tr
+          CRON_SECRET: ci-dry-run-placeholder
+        run: pnpm tsx scripts/cronjob-sync.ts --dry-run
+
+  lighthouse:
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run Lighthouse CI against production
+        run: npx --yes @lhci/cli@0.14.x autorun --config=.lighthouserc.json
