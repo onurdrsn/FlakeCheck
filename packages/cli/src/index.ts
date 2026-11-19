@@ -9,7 +9,7 @@ import { githubMarkdown } from './report.js';
 type Config = { gatewayUrl: string; repo: string; token: string };
 type Flake = { testId?: string; runId?: string; category?: string; confidence?: number; evidence?: Record<string, unknown>; filePath?: string; suiteName?: string; testName?: string };
 type FlakeResponse = { items: Flake[]; page?: number; pageSize?: number };
-type Format = 'junit' | 'jest' | 'playwright' | 'pytest' | 'go';
+type Format = 'junit' | 'ctrf' | 'jest' | 'vitest' | 'playwright' | 'pytest' | 'mocha' | 'go';
 
 class CliError extends Error { constructor(public readonly code: number, message: string) { super(message); } }
 
@@ -20,7 +20,9 @@ const validRepo = (value: string) => {
   return value;
 };
 const validFormat = (value: string): Format => {
-  if (!['junit', 'jest', 'playwright', 'pytest', 'go'].includes(value)) throw new InvalidArgumentError('format must be junit, jest, playwright, pytest, or go');
+  if (!['junit', 'ctrf', 'jest', 'vitest', 'playwright', 'pytest', 'mocha', 'go'].includes(value)) {
+    throw new InvalidArgumentError('format must be junit, ctrf, jest, vitest, playwright, pytest, mocha, or go');
+  }
   return value as Format;
 };
 function loadConfig(): Config {
@@ -514,20 +516,73 @@ program.command('doctor')
 
     if (!overallHealthy) throw new CliError(1, 'Gateway health is degraded');
   });
-program.command('report').description('write a Markdown CI/PR report')
-  .option('--format <format>', 'github-pr or markdown', 'github-pr')
+program.command('report').description('write a Markdown or JSON CI/PR report')
+  .option('--format <format>', 'github-pr, markdown, or json', 'github-pr')
+  .option('--json', 'output machine-readable JSON')
   .option('--dashboard <url>', 'dashboard review URL')
   .option('--output <file>', 'append Markdown report to a file')
-  .action(async (options: { format: string; dashboard?: string; output?: string }) => {
-    if (!['github-pr', 'markdown'].includes(options.format)) throw new CliError(1, '--format must be github-pr or markdown');
+  .action(async (options: { format: string; json?: boolean; dashboard?: string; output?: string }) => {
+    const effectiveFormat = options.json ? 'json' : options.format;
+    if (!['github-pr', 'markdown', 'json'].includes(effectiveFormat)) throw new CliError(1, '--format must be github-pr, markdown, or json');
     const api = client();
     const [summary, flakeResponse] = await Promise.all([
       api.request<{ wasteSeconds: number; wasteUsd: number; activeFlakes: number }>('/api/summary'),
       api.flakes(),
     ]);
+    if (effectiveFormat === 'json') {
+      const payload = JSON.stringify({ summary, flakes: flakeResponse.items }, null, 2);
+      if (options.output) appendFileSync(resolve(cwd(), options.output), `${payload}\n`);
+      console.log(payload);
+      return;
+    }
     const markdown = githubMarkdown(summary, flakeResponse.items, options.dashboard);
     if (options.output) appendFileSync(resolve(cwd(), options.output), `${markdown}\n`);
     console.log(markdown);
+  });
+program.command('doctor').description('verify local config, git context, gateway connectivity, and database readiness')
+  .option('--gateway <url>', 'override Gateway URL')
+  .option('--json', 'output machine-readable JSON diagnostics')
+  .action(async (options: { gateway?: string; json?: boolean }) => {
+    const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
+    const nodeMajor = Number(process.versions.node.split('.')[0] ?? 0);
+    checks.push({ name: 'node_version', ok: nodeMajor >= 20, detail: `Node.js ${process.versions.node}` });
+
+    let cfg: Config | null = null;
+    try {
+      cfg = loadConfig();
+      checks.push({ name: 'config', ok: true, detail: `Loaded ${basename(configPath)} for ${cfg.repo}` });
+    } catch (error) {
+      checks.push({ name: 'config', ok: false, detail: error instanceof Error ? error.message : String(error) });
+    }
+
+    const git = detectGitContext();
+    checks.push({
+      name: 'git_context',
+      ok: Boolean(git.commitSha || git.branch),
+      detail: git.commitSha ? `branch=${git.branch ?? 'detached'} commit=${git.commitSha.slice(0, 7)}` : 'No local .git metadata detected',
+    });
+
+    const gatewayUrl = (options.gateway ?? cfg?.gatewayUrl ?? '').replace(/\/+$/, '');
+    if (gatewayUrl) {
+      try {
+        const res = await fetch(`${gatewayUrl}/ready`);
+        checks.push({ name: 'gateway_ready', ok: res.ok, detail: `GET ${gatewayUrl}/ready -> HTTP ${res.status}` });
+      } catch (error) {
+        checks.push({ name: 'gateway_ready', ok: false, detail: error instanceof Error ? error.message : String(error) });
+      }
+    } else {
+      checks.push({ name: 'gateway_ready', ok: false, detail: 'No gateway URL configured (run "flakecheck init")' });
+    }
+
+    const ok = checks.every((c) => c.ok);
+    if (options.json) {
+      console.log(JSON.stringify({ ok, checks }, null, 2));
+    } else {
+      for (const c of checks) {
+        console.log(`${c.ok ? '\x1b[32m✔\x1b[0m' : '\x1b[31m✖\x1b[0m'} ${c.name}: ${c.detail}`);
+      }
+    }
+    if (!ok) throw new CliError(1, 'Doctor found one or more failing checks');
   });
 program.command('demo').description('send a synthetic Jest report through the Gateway').action(async () => {
   const report = JSON.stringify({ testResults: [{ name: 'flakecheck-demo.test.ts', status: 'failed', assertionResults: [{ ancestorTitles: ['demo'], title: 'synthetic flaky test', status: 'failed', failureMessages: ['demo failure'] }] }] });
