@@ -6,11 +6,9 @@ export function buildOpenApiSpec(baseUrl: string) {
       name: 'X-FlakeCheck-Repo',
       in: 'header',
       required: true,
-      description: 'Target repository in canonical owner/name format (automatically inferred if using a repository-scoped X-FlakeCheck-Token).',
+      description: 'Target repository in canonical owner/name format.',
       schema: {
         type: 'string',
-        default: 'onurdrsn/FlakeCheck',
-        example: 'onurdrsn/FlakeCheck',
       },
     },
     {
@@ -20,7 +18,6 @@ export function buildOpenApiSpec(baseUrl: string) {
       description: 'Optional query override for target repository in owner/name format.',
       schema: {
         type: 'string',
-        example: 'onurdrsn/FlakeCheck',
       },
     },
   ];
@@ -88,7 +85,7 @@ export function buildOpenApiSpec(baseUrl: string) {
               in: 'header',
               required: true,
               description: 'Target repository in owner/name format',
-              schema: { type: 'string', default: 'onurdrsn/FlakeCheck', example: 'onurdrsn/FlakeCheck' },
+              schema: { type: 'string' },
             },
             {
               name: 'X-FlakeCheck-Format',
@@ -98,15 +95,13 @@ export function buildOpenApiSpec(baseUrl: string) {
               schema: {
                 type: 'string',
                 enum: ['junit', 'ctrf', 'jest', 'vitest', 'playwright', 'pytest', 'mocha', 'go'],
-                default: 'jest',
-                example: 'jest',
               },
             },
             {
               name: 'Idempotency-Key',
               in: 'header',
               required: false,
-              schema: { type: 'string', example: 'ci-run-2026-11-19-001' },
+              schema: { type: 'string' },
             },
           ],
           requestBody: {
@@ -114,17 +109,6 @@ export function buildOpenApiSpec(baseUrl: string) {
             content: {
               'application/json': {
                 schema: { type: 'object' },
-                example: {
-                  testResults: [
-                    {
-                      name: 'src/checkout.test.ts',
-                      status: 'passed',
-                      assertionResults: [
-                        { ancestorTitles: ['Checkout'], title: 'processes payment idempotently', status: 'passed', duration: 42 },
-                      ],
-                    },
-                  ],
-                },
               },
             },
           },
@@ -140,7 +124,7 @@ export function buildOpenApiSpec(baseUrl: string) {
               name: 'Idempotency-Key',
               in: 'header',
               required: false,
-              schema: { type: 'string', example: 'gh-run-123456789' },
+              schema: { type: 'string' },
             },
           ],
           requestBody: {
@@ -159,14 +143,6 @@ export function buildOpenApiSpec(baseUrl: string) {
                     format: { type: 'string', enum: ['junit', 'ctrf', 'jest', 'vitest', 'playwright', 'pytest', 'mocha', 'go'] },
                     report: { type: 'string' },
                   },
-                },
-                example: {
-                  provider: 'github',
-                  repo: 'onurdrsn/FlakeCheck',
-                  branch: 'master',
-                  commitSha: '1e3443b99ef695da36b16fd25beb4ba54fba81b',
-                  format: 'ctrf',
-                  report: '{"results":{"tool":{"name":"vitest"},"summary":{"tests":1,"passed":1,"failed":0,"Pending":0,"skipped":0,"other":0,"start":1700000000,"stop":1700000010},"tests":[{"name":"renders dashboard","status":"passed","duration":18}]}}',
                 },
               },
             },
@@ -193,14 +169,14 @@ export function buildOpenApiSpec(baseUrl: string) {
               in: 'path',
               required: true,
               description: 'GitHub organization or user name',
-              schema: { type: 'string', default: 'onurdrsn', example: 'onurdrsn' },
+              schema: { type: 'string' },
             },
             {
               name: 'repo',
               in: 'path',
               required: true,
               description: 'Repository name (without .svg extension)',
-              schema: { type: 'string', default: 'FlakeCheck', example: 'FlakeCheck' },
+              schema: { type: 'string' },
             },
           ],
           responses: {
@@ -227,29 +203,20 @@ export function buildOpenApiSpec(baseUrl: string) {
           tags: ['Quarantine'],
           parameters: repoParameters,
           requestBody: {
-            required: true,
+            required: false,
             content: {
               'application/json': {
                 schema: {
                   type: 'object',
                   properties: {
-                    enabled: { type: 'boolean', default: true },
-                    flakinessScoreThreshold: { type: 'integer', minimum: 1, maximum: 100, default: 60 },
-                    minFlipCount: { type: 'integer', minimum: 1, maximum: 100, default: 2 },
-                    minSampleSize: { type: 'integer', minimum: 1, maximum: 500, default: 5 },
-                    autoGraduatePasses: { type: 'integer', minimum: 1, maximum: 500, default: 10 },
-                    nonBlockingMode: { type: 'boolean', default: true },
+                    enabled: { type: 'boolean' },
+                    flakinessScoreThreshold: { type: 'integer', minimum: 1, maximum: 100 },
+                    minFlipCount: { type: 'integer', minimum: 1, maximum: 100 },
+                    minSampleSize: { type: 'integer', minimum: 1, maximum: 500 },
+                    autoGraduatePasses: { type: 'integer', minimum: 1, maximum: 500 },
+                    nonBlockingMode: { type: 'boolean' },
                     defaultOwner: { type: 'string' },
                   },
-                },
-                example: {
-                  enabled: true,
-                  flakinessScoreThreshold: 60,
-                  minFlipCount: 2,
-                  minSampleSize: 5,
-                  autoGraduatePasses: 10,
-                  nonBlockingMode: true,
-                  defaultOwner: '@onurdrsn',
                 },
               },
             },
@@ -288,19 +255,10 @@ export function buildOpenApiSpec(baseUrl: string) {
                     target: { type: 'string' },
                     events: { type: 'array', items: { type: 'string' } },
                     digestFrequency: { type: 'string', enum: ['realtime', 'daily', 'weekly'] },
-                    dedupWindowMinutes: { type: 'integer', default: 60 },
-                    rateLimitPerHour: { type: 'integer', default: 20 },
-                    enabled: { type: 'boolean', default: true },
+                    dedupWindowMinutes: { type: 'integer' },
+                    rateLimitPerHour: { type: 'integer' },
+                    enabled: { type: 'boolean' },
                   },
-                },
-                example: {
-                  channel: 'webhook',
-                  target: 'https://example.com/webhooks/flakecheck-alerts',
-                  events: ['PROVEN_FLAKE_DETECTED', 'AUTO_QUARANTINED', 'DAILY_DIGEST'],
-                  digestFrequency: 'daily',
-                  dedupWindowMinutes: 60,
-                  rateLimitPerHour: 20,
-                  enabled: true,
                 },
               },
             },
@@ -329,10 +287,6 @@ export function buildOpenApiSpec(baseUrl: string) {
                     name: { type: 'string' },
                   },
                 },
-                example: {
-                  slug: 'flakecheck-core',
-                  name: 'FlakeCheck Core Engineering',
-                },
               },
             },
           },
@@ -356,12 +310,6 @@ export function buildOpenApiSpec(baseUrl: string) {
                     scopes: { type: 'array', items: { type: 'string', enum: ['read', 'ingest', 'quarantine', 'admin'] } },
                     expiresInDays: { type: 'integer' },
                   },
-                },
-                example: {
-                  repo: 'onurdrsn/FlakeCheck',
-                  name: 'GitHub Actions CI Token',
-                  scopes: ['ingest', 'read', 'quarantine'],
-                  expiresInDays: 90,
                 },
               },
             },
@@ -397,16 +345,8 @@ export function buildOpenApiSpec(baseUrl: string) {
                   required: ['provider', 'config'],
                   properties: {
                     provider: { type: 'string', enum: ['github', 'jira', 'linear'] },
-                    enabled: { type: 'boolean', default: true },
+                    enabled: { type: 'boolean' },
                     config: { type: 'object' },
-                  },
-                },
-                example: {
-                  provider: 'github',
-                  enabled: true,
-                  config: {
-                    labels: 'flaky-test,quarantined',
-                    autoCloseOnGraduation: 'true',
                   },
                 },
               },
@@ -450,7 +390,7 @@ export function renderInteractiveApiDocsHtml(baseUrl: string): string {
   <script>
     (function () {
       var lastSvgText = '';
-      var lastSvgUrl = '${cleanBase}/api/v1/badge/onurdrsn/FlakeCheck.svg';
+      var lastSvgUrl = '';
       var origFetch = window.fetch;
       if (typeof origFetch === 'function') {
         window.fetch = function () {
