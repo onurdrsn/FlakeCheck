@@ -602,7 +602,12 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
     if (request.method !== 'GET' && request.method !== 'HEAD') return response;
     const pathname = new URL(request.url).pathname;
     if (pathname === '/api' || pathname.startsWith('/api/')) return response;
-    return this.env.ASSETS.fetch(request);
+    let assetResponse = await this.env.ASSETS.fetch(request);
+    if ((assetResponse.status === 307 || assetResponse.status === 308) && assetResponse.headers.get('location')) {
+      const targetUrl = new URL(assetResponse.headers.get('location')!, request.url);
+      assetResponse = await this.env.ASSETS.fetch(new Request(targetUrl.toString(), request));
+    }
+    return assetResponse;
   }
 }
 

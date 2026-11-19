@@ -44,6 +44,16 @@
 	    "service": "flakecheck-quarantine-service"
     }
   ],
+  "routes": [
+    {
+      "pattern": "*api.flakecheck.onurd.com.tr/*",
+      "zone_name": "onurd.com.tr"
+    },
+    {
+      "pattern": "flakecheck.onurd.com.tr/*",
+      "zone_name": "onurd.com.tr"
+    }
+  ],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
@@ -53,6 +63,9 @@
       "/api/*",
       "/health",
       "/ready",
+      "/app",
+      "/login",
+      "/dashboard",
       "/guides",
       "/guides/*",
       "/compare",
@@ -116,6 +129,9 @@
           "/api/*",
           "/health",
           "/ready",
+          "/app",
+          "/login",
+          "/dashboard",
           "/guides",
           "/guides/*",
           "/compare",
@@ -132,6 +148,16 @@
     },
     "production": {
       "name": "flakecheck-gateway-service",
+      "routes": [
+        {
+          "pattern": "*api.flakecheck.onurd.com.tr/*",
+          "zone_name": "onurd.com.tr"
+        },
+        {
+          "pattern": "flakecheck.onurd.com.tr/*",
+          "zone_name": "onurd.com.tr"
+        }
+      ],
       "vars": {
         "SERVICE_NAME": "gateway-service",
         "ENVIRONMENT": "production",
@@ -179,6 +205,9 @@
           "/api/*",
           "/health",
           "/ready",
+          "/app",
+          "/login",
+          "/dashboard",
           "/guides",
           "/guides/*",
           "/compare",
