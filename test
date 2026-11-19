@@ -1,0 +1,15 @@
+AUTH_DATABASE_URL="postgresql://neondb_owner:npg_qRILr7BhQp2x@ep-super-art-bailhjw5-pooler.c-8.eu-central-1.aws.neon.tech/auth-db?sslmode=require&channel_binding=require"
+
+PROJECT_DATABASE_URL="postgresql://neondb_owner:npg_qRILr7BhQp2x@ep-super-art-bailhjw5-pooler.c-8.eu-central-1.aws.neon.tech/project-db?sslmode=require&channel_binding=require"
+
+VAULT_DATABASE_URL="postgresql://neondb_owner:npg_qRILr7BhQp2x@ep-super-art-bailhjw5-pooler.c-8.eu-central-1.aws.neon.tech/vault-db?sslmode=require&channel_binding=require"
+
+FLAG_DATABASE_URL="postgresql://neondb_owner:npg_qRILr7BhQp2x@ep-super-art-bailhjw5-pooler.c-8.eu-central-1.aws.neon.tech/flag-db?sslmode=require&channel_binding=require"
+
+BILLING_DATABASE_URL="postgresql://neondb_owner:npg_qRILr7BhQp2x@ep-super-art-bailhjw5-pooler.c-8.eu-central-1.aws.neon.tech/billing-db?sslmode=require&channel_binding=require"
+
+AUDIT_DATABASE_URL="postgresql://neondb_owner:npg_qRILr7BhQp2x@ep-super-art-bailhjw5-pooler.c-8.eu-central-1.aws.neon.tech/audit-db?sslmode=require&channel_binding=require"
+
+ENGINE_DATABASE_URL="postgresql://neondb_owner:npg_qRILr7BhQp2x@ep-super-art-bailhjw5-pooler.c-8.eu-central-1.aws.neon.tech/engine-db?sslmode=require&channel_binding=require"
+
+
