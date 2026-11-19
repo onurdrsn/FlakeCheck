@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { createSeoRouter } from '../src/seo/ssr.js';
 import { SEO_GUIDES } from '../src/seo/content.js';
-import { buildOpenApiSpec, renderInteractiveApiDocsHtml } from '../src/openapi.js';
+import { renderInteractiveApiDocsHtml } from '../src/openapi.js';
 
 const BASE_URL = (process.env.PUBLIC_APP_URL ?? 'https://flakecheck.onurd.com.tr').replace(/\/+$/, '');
 const PUBLIC_DIR = resolve(process.cwd(), 'public');
@@ -70,8 +70,7 @@ async function main() {
     writeFileEnsureDir(target.filePath, text);
   }
 
-  // 3. Pre-render OpenAPI 3.1 spec and interactive /docs/api page
-  writeFileEnsureDir('api/v1/openapi.json', `${JSON.stringify(buildOpenApiSpec(BASE_URL), null, 2)}\n`);
+  // 3. Pre-render interactive /docs/api page (/api/* stays purely in the Worker)
   writeFileEnsureDir('docs/api/index.html', renderInteractiveApiDocsHtml(BASE_URL));
 
   // 4. Write Cloudflare Pages _headers for security, caching, and noindex on private routes

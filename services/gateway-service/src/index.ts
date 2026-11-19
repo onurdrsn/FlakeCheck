@@ -597,8 +597,11 @@ export class GatewayEntrypoint extends WorkerEntrypoint<Env> {
       await deleteAccount(context.env, auth.userId);
       return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json', 'Set-Cookie': expiredSessionCookieFor() } });
     });
-    const response = await app.fetch(request, this.env);
+    const response = await app.fetch(request, this.env, this.ctx);
     if (response.status !== 404 || !this.env.ASSETS) return response;
+    if (request.method !== 'GET' && request.method !== 'HEAD') return response;
+    const pathname = new URL(request.url).pathname;
+    if (pathname === '/api' || pathname.startsWith('/api/')) return response;
     return this.env.ASSETS.fetch(request);
   }
 }

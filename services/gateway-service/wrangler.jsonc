@@ -55,9 +55,11 @@
       "/ready",
       "/guides",
       "/guides/*",
+      "/compare",
       "/compare/*",
       "/changelog",
       "/docs/api",
+      "/docs/api/*",
       "/og/*",
       "/sitemap.xml",
       "/robots.txt",
@@ -69,14 +71,126 @@
       "name": "flakecheck-gateway-staging",
       "vars": {
         "SERVICE_NAME": "gateway-service",
-        "ENVIRONMENT": "staging"
+        "ENVIRONMENT": "staging",
+        "RATE_LIMIT_WINDOW_MS": "60000",
+        "RATE_LIMIT_AUTH_MAX": "20",
+        "RATE_LIMIT_INGEST_MAX": "120",
+        "RATE_LIMIT_BADGE_MAX": "300",
+        "RATE_LIMIT_CRON_MAX": "10",
+        "RATE_LIMIT_API_MAX": "180"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "RATE_LIMITER_DO",
+            "class_name": "RateLimiterDO"
+          }
+        ]
+      },
+      "migrations": [
+        {
+          "tag": "v1-rate-limiter-do",
+          "new_sqlite_classes": ["RateLimiterDO"]
+        }
+      ],
+      "services": [
+        {
+          "binding": "INGESTION_SERVICE",
+          "service": "flakecheck-ingestion-service"
+        },
+        {
+          "binding": "ANALYSIS_SERVICE",
+          "service": "flakecheck-analysis-service"
+        },
+        {
+          "binding": "QUARANTINE_SERVICE",
+          "service": "flakecheck-quarantine-service"
+        }
+      ],
+      "assets": {
+        "directory": "./public",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": [
+          "/",
+          "/api/*",
+          "/health",
+          "/ready",
+          "/guides",
+          "/guides/*",
+          "/compare",
+          "/compare/*",
+          "/changelog",
+          "/docs/api",
+          "/docs/api/*",
+          "/og/*",
+          "/sitemap.xml",
+          "/robots.txt",
+          "/llms.txt"
+        ]
       }
     },
     "production": {
       "name": "flakecheck-gateway-service",
       "vars": {
         "SERVICE_NAME": "gateway-service",
-        "ENVIRONMENT": "production"
+        "ENVIRONMENT": "production",
+        "RATE_LIMIT_WINDOW_MS": "60000",
+        "RATE_LIMIT_AUTH_MAX": "20",
+        "RATE_LIMIT_INGEST_MAX": "120",
+        "RATE_LIMIT_BADGE_MAX": "300",
+        "RATE_LIMIT_CRON_MAX": "10",
+        "RATE_LIMIT_API_MAX": "180"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "RATE_LIMITER_DO",
+            "class_name": "RateLimiterDO"
+          }
+        ]
+      },
+      "migrations": [
+        {
+          "tag": "v1-rate-limiter-do",
+          "new_sqlite_classes": ["RateLimiterDO"]
+        }
+      ],
+      "services": [
+        {
+          "binding": "INGESTION_SERVICE",
+          "service": "flakecheck-ingestion-service"
+        },
+        {
+          "binding": "ANALYSIS_SERVICE",
+          "service": "flakecheck-analysis-service"
+        },
+        {
+          "binding": "QUARANTINE_SERVICE",
+          "service": "flakecheck-quarantine-service"
+        }
+      ],
+      "assets": {
+        "directory": "./public",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": [
+          "/",
+          "/api/*",
+          "/health",
+          "/ready",
+          "/guides",
+          "/guides/*",
+          "/compare",
+          "/compare/*",
+          "/changelog",
+          "/docs/api",
+          "/docs/api/*",
+          "/og/*",
+          "/sitemap.xml",
+          "/robots.txt",
+          "/llms.txt"
+        ]
       }
     }
   },

@@ -34,7 +34,7 @@ ready_code=$(curl -sS -o /dev/null -w "%{http_code}" "${BASE_URL}/ready")
 [[ "$ready_code" == "200" ]]  || { echo "[FAIL] /ready returned HTTP ${ready_code}"; exit 1; }
 echo "[OK]   /health (200) and /ready (200)"
 
-# 4. Verify cron endpoint rejects unauthenticated requests with 401 + WWW-Authenticate
+# 4. Verify cron endpoint rejects unauthenticated requests with 401 + WWW-Authenticate + X-Robots-Tag + application/json
 cron_headers=$(curl -sS -D - -o /dev/null -X POST "${BASE_URL}/api/v1/internal/cron/digest?type=daily")
 cron_status=$(echo "$cron_headers" | head -n 1 | awk '{print $2}')
 if [[ "$cron_status" != "401" ]]; then
@@ -45,7 +45,15 @@ if ! echo "$cron_headers" | grep -qi "www-authenticate:.*bearer"; then
   echo "[FAIL] Cron 401 response missing WWW-Authenticate Bearer header"
   exit 1
 fi
-echo "[OK]   Cron endpoint enforces 401 + WWW-Authenticate without token"
+if ! echo "$cron_headers" | grep -qi "x-robots-tag:.*noindex"; then
+  echo "[FAIL] Cron 401 response missing X-Robots-Tag: noindex header"
+  exit 1
+fi
+if ! echo "$cron_headers" | grep -qi "content-type:.*application/json"; then
+  echo "[FAIL] Cron 401 response missing Content-Type: application/json header"
+  exit 1
+fi
+echo "[OK]   Cron endpoint enforces 401 + WWW-Authenticate + X-Robots-Tag + application/json without token"
 
 # 5. Verify internal cron endpoints are NOT leaked in OpenAPI public spec
 openapi_body=$(curl -sS "${BASE_URL}/api/v1/openapi.json")
