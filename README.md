@@ -1,8 +1,10 @@
-# FlakeCheck
+# FlakeCheck — Open-Source Flaky Test Detector & Auto-Quarantine Platform
 
-FlakeCheck is a repository-scoped CI reliability platform. It ingests test reports at the edge, normalizes attempts and failure signatures, classifies flaky behavior deterministically, and exposes evidence through a Gateway Worker, React dashboard, and HTTP-only CLI.
+[![FlakeCheck Health](https://flakecheck.onurd.com.tr/api/v1/badge/onurdrsn/FlakeCheck.svg)](https://flakecheck.onurd.com.tr/?utm_source=github&utm_medium=badge&utm_campaign=readme)
 
-[Live Dashboard](https://flakecheck.onurd.com.tr) · [Documentation](https://flakecheck.onurd.com.tr/docs) · [System Status](https://flakecheck.onurd.com.tr/status) · [Customer Support](https://flakecheck.onurd.com.tr/support) · [How to use FlakeCheck](HOW-TO-USE.md) · [CLI usage](#cli)
+**FlakeCheck** (*Flake Check* / `flake-check`) is an edge-native **flaky test detection**, root-cause forensics, and automated quarantine platform built on **Hono**, **Cloudflare Workers**, **Drizzle ORM**, and **Neon PostgreSQL**. Stream **JUnit XML, CTRF, Jest, Vitest, Playwright, Pytest, Mocha, or Go** test reports from GitHub Actions, GitLab CI, CircleCI, or Jenkins to get Wilson 95% confidence flakiness scores, 6-class root cause classification, CI waste cost analytics, and non-blocking quarantine.
+
+[Live Dashboard](https://flakecheck.onurd.com.tr) · [Flaky Test Guides](https://flakecheck.onurd.com.tr/guides) · [OpenAPI 3.1 Docs](https://flakecheck.onurd.com.tr/docs/api) · [Deployment Guide](docs/DEPLOYMENT.md) · [Production Changelog](docs/CHANGELOG_PRODUCTION.md) · [SEO Checklist](docs/SEO_CHECKLIST.md) · [System Status](https://flakecheck.onurd.com.tr/status)
 
 ## Product Showcase
 

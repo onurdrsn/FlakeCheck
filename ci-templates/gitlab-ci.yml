@@ -1,0 +1,28 @@
+# Ready-to-use GitLab CI template for FlakeCheck
+stages:
+  - test
+  - flakecheck
+
+unit_tests:
+  stage: test
+  image: node:22
+  allow_failure: false
+  script:
+    - pnpm install --frozen-lockfile
+    - pnpm test -- --reporter=junit --outputFile=junit.xml
+  artifacts:
+    when: always
+    paths:
+      - junit.xml
+    reports:
+      junit: junit.xml
+
+flakecheck_report:
+  stage: flakecheck
+  image: node:22
+  when: always
+  needs: ["unit_tests"]
+  script:
+    - npx --yes @onurdrsn/flakecheck init --gateway "$FLAKECHECK_URL" --repo "$CI_PROJECT_PATH" --token "$FLAKECHECK_TOKEN"
+    - npx --yes @onurdrsn/flakecheck ingest junit.xml --format junit --commit "$CI_COMMIT_SHA" --branch "$CI_COMMIT_REF_NAME"
+    - npx --yes @onurdrsn/flakecheck report --format markdown

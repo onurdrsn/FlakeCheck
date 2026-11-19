@@ -1,0 +1,31 @@
+version: 2.1
+
+jobs:
+  test-and-flakecheck:
+    docker:
+      - image: cimg/node:22.11
+    steps:
+      - checkout
+      - run:
+          name: Run tests with JUnit report
+          command: pnpm test -- --reporter=junit --outputFile=junit.xml
+      - run:
+          name: Ingest results into FlakeCheck
+          when: always
+          command: |
+            npx --yes @onurdrsn/flakecheck init \
+              --gateway "$FLAKECHECK_URL" \
+              --repo "$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME" \
+              --token "$FLAKECHECK_TOKEN"
+            npx --yes @onurdrsn/flakecheck ingest junit.xml \
+              --format junit \
+              --commit "$CIRCLE_SHA1" \
+              --branch "$CIRCLE_BRANCH"
+            npx --yes @onurdrsn/flakecheck report --json > flakecheck-report.json
+      - store_artifacts:
+          path: flakecheck-report.json
+
+workflows:
+  ci:
+    jobs:
+      - test-and-flakecheck

@@ -1,0 +1,35 @@
+pipeline {
+  agent any
+  environment {
+    FLAKECHECK_URL   = credentials('flakecheck-url')
+    FLAKECHECK_TOKEN = credentials('flakecheck-token')
+    FLAKECHECK_REPO  = 'acme/my-service'
+  }
+  stages {
+    stage('Test') {
+      steps {
+        sh 'pnpm test -- --reporter=junit --outputFile=junit.xml || true'
+      }
+    }
+    stage('FlakeCheck Analysis') {
+      steps {
+        sh '''
+          npx --yes @onurdrsn/flakecheck init \
+            --gateway "$FLAKECHECK_URL" \
+            --repo "$FLAKECHECK_REPO" \
+            --token "$FLAKECHECK_TOKEN"
+          npx --yes @onurdrsn/flakecheck ingest junit.xml \
+            --format junit \
+            --commit "$GIT_COMMIT" \
+            --branch "$BRANCH_NAME"
+          npx --yes @onurdrsn/flakecheck doctor --json
+        '''
+      }
+    }
+  }
+  post {
+    always {
+      junit allowEmptyResults: true, testResults: 'junit.xml'
+    }
+  }
+}

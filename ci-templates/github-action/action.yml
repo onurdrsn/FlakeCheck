@@ -1,0 +1,53 @@
+name: 'FlakeCheck — Flaky Test Detection & Quarantine'
+description: 'Stream JUnit, CTRF, Jest, Vitest, Playwright, Pytest, Mocha, or Go test reports to FlakeCheck and post PR reliability reports.'
+branding:
+  icon: 'shield'
+  color: 'green'
+
+inputs:
+  gateway-url:
+    description: 'FlakeCheck Gateway URL (e.g. https://flakecheck.onurd.com.tr)'
+    required: true
+  token:
+    description: 'Repository-scoped FlakeCheck API token'
+    required: true
+  repo:
+    description: 'Canonical repository in owner/name format'
+    required: false
+    default: ${{ github.repository }}
+  format:
+    description: 'Test report format: junit | ctrf | jest | vitest | playwright | pytest | mocha | go'
+    required: true
+    default: 'junit'
+  files:
+    description: 'Glob or path(s) to test report files'
+    required: true
+  post-pr-comment:
+    description: 'Post a Markdown summary to the GitHub Step Summary'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Configure FlakeCheck CLI
+      shell: bash
+      run: |
+        npx --yes @onurdrsn/flakecheck init \
+          --gateway "${{ inputs.gateway-url }}" \
+          --repo "${{ inputs.repo }}" \
+          --token "${{ inputs.token }}"
+
+    - name: Stream test reports to FlakeCheck
+      shell: bash
+      run: |
+        npx --yes @onurdrsn/flakecheck ingest ${{ inputs.files }} \
+          --format "${{ inputs.format }}" \
+          --commit "${{ github.sha }}" \
+          --branch "${{ github.ref_name }}"
+
+    - name: Generate reliability summary
+      if: inputs.post-pr-comment == 'true'
+      shell: bash
+      run: |
+        npx --yes @onurdrsn/flakecheck report --format github-pr --output "$GITHUB_STEP_SUMMARY"
