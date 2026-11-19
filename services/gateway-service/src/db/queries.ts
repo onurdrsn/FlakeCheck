@@ -38,7 +38,22 @@ export async function testTimeline(db: Db, repo: string, testId: string) {
 export async function getRunDetails(db: Db, repo: string, runId: string) {
   if (runId === 'all') {
     const repoRuns = await db.select().from(runs).where(eq(runs.repo, repo)).orderBy(desc(runs.createdAt)).limit(30);
-    if (!repoRuns.length) return null;
+    if (!repoRuns.length) {
+      return {
+        run: {
+          id: 'all',
+          repo,
+          commitSha: '',
+          branch: '',
+          ciProvider: 'github-actions',
+          ciWorkflowName: '',
+          runnerCostPerMinute: 0.008,
+          createdAt: new Date(),
+        },
+        runs: [],
+        attempts: [],
+      };
+    }
     const runIds = repoRuns.map((r) => r.id);
     const attempts = await db.select({
       id: testAttempts.id,
